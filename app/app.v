@@ -1,5 +1,9 @@
 module app
 
+import os
+import config
+import source
+
 // The command surface, verbatim. A raw string: v fmt (for now) collapses an ordinary
 // multiline literal into one line of \n escapes.
 const help = r"usage:
@@ -65,6 +69,85 @@ fn dispatch(command string, f Flags) !int {
 	if command !in commands {
 		return error("unknown command '${command}'; try 'gitlife help'")
 	}
-	// TODO : one arm per command as its module lands
-	return error("'${command}' is not implemented yet")
+	paths := config.paths()
+	mut c := config.load(paths)!
+	match command {
+		'source' {
+			return source_cmd(mut c, f)
+		}
+		else {
+			// TODO : one arm per command as its module lands
+			return error("'${command}' is not implemented yet")
+		}
+	}
+}
+
+fn source_cmd(mut c config.Config, f Flags) !int {
+	if f.rest.len == 0 {
+		return error('usage: gitlife source <add|list|remove>')
+	}
+	match f.rest[0] {
+		'add' {
+			if f.rest.len != 3 {
+				return error('usage: gitlife source add <local|git|github> <spec>')
+			}
+			kind := f.rest[1]
+			if kind !in ['local', 'git', 'github'] {
+				return error("unknown source kind '${kind}'")
+			}
+			// A local spec is canonicalized here which keeps one directory reached
+			// by two paths a single source. A remote spec is redacted because a
+			// source id is printed in every sync line and report.
+			spec := match kind {
+				'local' { os.real_path(f.rest[2]) }
+				'git' { source.redact_url(f.rest[2]) }
+				else { f.rest[2] }
+			}
+			if kind == 'local' && !os.is_dir(spec) {
+				return error('${f.rest[2]}: not a directory')
+			}
+			s := config.Source{
+				kind: kind
+				spec: spec
+			}
+			if c.sources.any(it.id() == s.id()) {
+				println('already configured: ${s.id()}')
+				return 0
+			}
+			c.sources << s
+			c.save()!
+			println('added ${s.id()}')
+			return 0
+		}
+		'list' {
+			if c.sources.len == 0 {
+				println('no sources configured')
+				return 0
+			}
+			for s in c.sources {
+				state := if s.active { '' } else { '  (inactive)' }
+				println('${s.id()}${state}')
+			}
+			return 0
+		}
+		'remove' {
+			if f.rest.len != 2 {
+				return error('usage: gitlife source remove <source-id>')
+			}
+			id := f.rest[1]
+			before := c.sources.len
+			c.sources = c.sources.filter(it.id() != id)
+			if c.sources.len == before {
+				return error("no configured source with id '${id}'")
+			}
+			c.save()!
+			// Indexed history is kept. The database marks the source inactive on the
+			// next sync and purging is a separate command.
+			println('removed ${id}; indexed history was kept')
+			return 0
+		}
+		else {
+			return error('usage: gitlife source <add|list|remove>')
+		}
+	}
 }
