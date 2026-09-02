@@ -1,0 +1,333 @@
+module index
+
+import db.sqlite
+import os
+import gitrepo
+import identity
+import source
+
+pub struct DB {
+mut:
+	conn sqlite.DB
+}
+
+// A Location is an identity bearing reference to a repository. Its 'key' is the
+// merge key: two locations sharing a key are the same repository by definition.
+pub struct Location {
+pub:
+	kind  string // worktree | bare | remote
+	key   string
+	value string
+}
+
+pub fn open(path string) !&DB {
+	if path != ':memory:' {
+		os.mkdir_all(os.dir(path))!
+	}
+	mut conn := sqlite.connect(path)!
+	conn.busy_timeout(5000)
+	conn.exec('PRAGMA journal_mode = WAL')!
+	conn.exec('PRAGMA foreign_keys = ON')!
+	mut d := &DB{
+		conn: conn
+	}
+	d.migrate()!
+	return d
+}
+
+pub fn (mut d DB) close() ! {
+	d.conn.close()!
+}
+
+fn (mut d DB) migrate() ! {
+	current := d.conn.q_int('PRAGMA user_version')!
+	if current > schema_version {
+		return error('database schema is version ${current}, newer than this gitlife supports (${schema_version})')
+	}
+	if current == schema_version {
+		return
+	}
+	d.conn.begin()!
+	for v := current; v < schema_version; v++ {
+		for stmt in migrations[v] {
+			d.conn.exec(stmt) or {
+				d.conn.rollback() or {}
+				return err
+			}
+		}
+	}
+	d.conn.exec('PRAGMA user_version = ${schema_version}') or {
+		d.conn.rollback() or {}
+		return err
+	}
+	d.conn.commit()!
+}
+
+// upsert_source records a configured source. The database keeps history for
+// sources the config no longer lists and 'active' distinguishes them rather
+// than deletion.
+pub fn (mut d DB) upsert_source(id string, kind string, spec string, active bool, now i64) ! {
+	d.conn.exec_param_many('INSERT INTO sources (id, kind, spec, active, created_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, spec = excluded.spec,
+		                              active = excluded.active', [id, kind, spec, bit(active),
+		now.str()])!
+}
+
+pub fn (mut d DB) deactivate_sources_except(ids []string) ! {
+	mut q := 'UPDATE sources SET active = 0'
+	if ids.len > 0 {
+		q += ' WHERE id NOT IN (' + '?, '.repeat(ids.len).trim_string_right(', ') + ')'
+	}
+	d.conn.exec_param_many(q, ids)!
+}
+
+// resolve_repository resolves a set of locations to one repository, creating it
+// when all of them are new.
+//
+// Repositories merge only through a shared location key, never through
+// overlapping commits, which would collapse a fork into its upstream. When two
+// locations that were separate repositories turn out to be joined by a primary
+// remote, the older absorbs the newer rather than the two being left to
+// double count the same work.
+pub fn (mut d DB) resolve_repository(locations []Location, name string, object_format string, now i64) !i64 {
+	mut owners := []i64{}
+	for location in locations {
+		rows := d.conn.exec_param('SELECT repository_id FROM repository_locations WHERE key = ?', location.key)!
+		if rows.len == 0 {
+			continue
+		}
+		owner := rows[0].val(0).i64()
+		if owner !in owners {
+			owners << owner
+		}
+	}
+
+	mut id := i64(0)
+	if owners.len == 0 {
+		d.conn.exec_param_many('INSERT INTO repositories (display_name, object_format, created_at)
+			VALUES (?, ?, ?)', [name, object_format, now.str()])!
+		id = d.conn.last_insert_rowid()
+	} else {
+		owners.sort()
+		id = owners[0]
+		for absorbed in owners[1..] {
+			d.merge_repositories(id, absorbed)!
+		}
+	}
+
+	for location in locations {
+		d.conn.exec_param_many('INSERT OR IGNORE INTO repository_locations (repository_id, kind, key, value)
+			VALUES (?, ?, ?, ?)', [id.str(), location.kind, location.key, location.value])!
+	}
+	if object_format != '' {
+		d.conn.exec_param_many("UPDATE repositories SET object_format = ?
+			WHERE id = ? AND object_format = ''", [object_format, id.str()])!
+	}
+	return id
+}
+
+// merge_repositories folds 'absorbed' into 'keep'. Repository ids are ours and
+// the one thing here safe to write straight into the SQL.
+fn (mut d DB) merge_repositories(keep i64, absorbed i64) ! {
+	d.conn.exec('INSERT OR IGNORE INTO repository_commits (repository_id, commit_id)\n\t\tSELECT ${keep}, commit_id FROM repository_commits WHERE repository_id = ${absorbed}')!
+	d.conn.exec('DELETE FROM repository_commits WHERE repository_id = ${absorbed}')!
+	d.conn.exec('INSERT OR IGNORE INTO discoveries (source_id, repository_id, first_seen, last_seen, metadata)\n\t\tSELECT source_id, ${keep}, first_seen, last_seen, metadata FROM discoveries\n\t\tWHERE repository_id = ${absorbed}')!
+	d.conn.exec('DELETE FROM discoveries WHERE repository_id = ${absorbed}')!
+	d.conn.exec('INSERT OR IGNORE INTO repository_remotes (repository_id, name, url, url_norm)\n\t\tSELECT ${keep}, name, url, url_norm FROM repository_remotes WHERE repository_id = ${absorbed}')!
+	d.conn.exec('DELETE FROM repository_remotes WHERE repository_id = ${absorbed}')!
+	d.conn.exec('UPDATE repository_locations SET repository_id = ${keep} WHERE repository_id = ${absorbed}')!
+	d.conn.exec("UPDATE repositories SET object_format =\n\t\t\t(SELECT object_format FROM repositories WHERE id = ${absorbed})\n\t\tWHERE id = ${keep} AND object_format = ''")!
+	d.conn.exec('DELETE FROM repositories WHERE id = ${absorbed}')!
+}
+
+// location_digest is the fingerprint of the refs seen the last time this location
+// was scanned successfully.
+pub fn (mut d DB) location_digest(key string) !string {
+	rows := d.conn.exec_param('SELECT refs_digest FROM repository_locations WHERE key = ?', key)!
+	if rows.len == 0 {
+		return ''
+	}
+	return rows[0].val(0)
+}
+
+pub fn (mut d DB) set_location_digest(key string, digest string) ! {
+	d.conn.exec_param_many('UPDATE repository_locations SET refs_digest = ? WHERE key = ?', [
+		digest,
+		key,
+	])!
+}
+
+// replace_remotes records every remote a repository has, as evidence. These are
+// deliberately not locations: a non primary remote must never merge two
+// repositories or adding 'upstream' to a fork would fuse it with what it forked.
+pub fn (mut d DB) replace_remotes(repository_id i64, remotes map[string]string) ! {
+	d.conn.exec_param('DELETE FROM repository_remotes WHERE repository_id = ?', repository_id.str())!
+	mut rows := [][]string{}
+	for remote_name, url in remotes {
+		rows << [repository_id.str(), remote_name, source.redact_url(url), source.normalize_url(url)]
+	}
+	if rows.len > 0 {
+		d.conn.exec_param_many('INSERT OR IGNORE INTO repository_remotes (repository_id, name, url, url_norm)
+			VALUES (?, ?, ?, ?)', rows)!
+	}
+}
+
+pub fn (mut d DB) record_discovery(source_id string, repository_id i64, now i64) ! {
+	d.record_discovery_with(source_id, repository_id, '', now)!
+}
+
+// record_discovery_with stores provider metadata alongside the discovery. The
+// metadata is a provider's description of a repository; it is never evidence
+// about that repository's commits.
+pub fn (mut d DB) record_discovery_with(source_id string, repository_id i64, metadata string, now i64) ! {
+	d.conn.exec_param_many('INSERT INTO discoveries (source_id, repository_id, first_seen, last_seen, metadata)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(source_id, repository_id) DO UPDATE SET last_seen = excluded.last_seen,
+			metadata = excluded.metadata', [
+		source_id,
+		repository_id.str(),
+		now.str(),
+		now.str(),
+		metadata,
+	])!
+}
+
+pub fn (mut d DB) record_sync(scope string, ref_id string, status string, message string, now i64) ! {
+	success := if status == 'ok' { now.str() } else { '0' }
+	d.conn.exec_param_many('INSERT INTO sync_results (scope, ref_id, status, message, last_attempt_at, last_success_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(scope, ref_id) DO UPDATE SET
+			status = excluded.status, message = excluded.message,
+			last_attempt_at = excluded.last_attempt_at,
+			last_success_at = MAX(sync_results.last_success_at, excluded.last_success_at)', [
+		scope,
+		ref_id,
+		status,
+		message,
+		now.str(),
+		success,
+	])!
+}
+
+// set_accepted mirrors config.toml into the database so report queries stay pure
+// SQL with no identity filtering done in V.
+pub fn (mut d DB) set_accepted(names []string, emails []string) ! {
+	d.conn.begin()!
+	d.apply_accepted(names, emails) or {
+		d.conn.rollback() or {}
+		return err
+	}
+	d.conn.commit()!
+}
+
+fn (mut d DB) apply_accepted(names []string, emails []string) ! {
+	d.conn.exec('DELETE FROM accepted_identities')!
+	mut rows := [][]string{}
+	for n in names {
+		rows << ['name', n, identity.norm_name(n)]
+	}
+	for e in emails {
+		rows << ['email', e, identity.norm_email(e)]
+	}
+	if rows.len > 0 {
+		d.conn.exec_param_many('INSERT OR IGNORE INTO accepted_identities (kind, value, value_norm)
+			VALUES (?, ?, ?)', rows)!
+	}
+}
+
+// write_snapshot writes one location's scan atomically, and returns how many of
+// the commits it held were ones the index had never seen. Either the repository
+// ends up holding the scanned commits or it keeps the snapshot it had.
+//
+// 'fresh' says whether this is the first location of this repository written in
+// this run. Only the first clears the previous membership; the rest add to it. A
+// repository reachable through both a working tree and a cached clone then holds
+// the union of what they contain, not whichever was scanned last.
+pub fn (mut d DB) write_snapshot(repository_id i64, scan gitrepo.Scan, fresh bool) !int {
+	d.conn.begin()!
+	added := d.apply_snapshot(repository_id, scan, fresh) or {
+		d.conn.rollback() or {}
+		return err
+	}
+	d.conn.commit()!
+	return added
+}
+
+fn (mut d DB) apply_snapshot(repository_id i64, scan gitrepo.Scan, fresh bool) !int {
+	before := d.conn.q_int('SELECT COALESCE(MAX(id), 0) FROM commits')!
+	mut idents := [][]string{}
+	mut seen := map[string]bool{}
+	for c in scan.commits {
+		add_identity(mut idents, mut seen, c.author_name, c.author_email)
+		add_identity(mut idents, mut seen, c.committer_name, c.committer_email)
+	}
+	if idents.len > 0 {
+		d.conn.exec_param_many('INSERT OR IGNORE INTO git_identities (name, email, email_norm)
+			VALUES (?, ?, ?)', idents)!
+	}
+
+	mut rows := [][]string{cap: scan.commits.len}
+	for c in scan.commits {
+		rows << [
+			scan.object_format,
+			c.object_id,
+			c.parents,
+			c.author_name,
+			c.author_email,
+			c.author_time.str(),
+			c.author_tz.str(),
+			(c.author_time + c.author_tz * 60).str(),
+			c.committer_name,
+			c.committer_email,
+			c.committer_time.str(),
+			c.committer_tz.str(),
+			(c.committer_time + c.committer_tz * 60).str(),
+			c.subject,
+		]
+	}
+	if rows.len > 0 {
+		d.conn.exec_param_many('INSERT OR IGNORE INTO commits (
+				object_format, object_id, parents,
+				author_identity_id, author_time, author_tz, author_date,
+				committer_identity_id, committer_time, committer_tz, committer_date,
+				subject)
+			VALUES (?, ?, ?,
+				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, \'unixepoch\'),
+				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, \'unixepoch\'),
+				?)', rows)!
+	}
+
+	// Full snapshot replacement. Membership reflects the latest successful scan,
+	// and a deleted branch stops counting with no drift to reconcile.
+	if fresh {
+		d.conn.exec_param('DELETE FROM repository_commits WHERE repository_id = ?', repository_id.str())!
+	}
+	mut members := [][]string{cap: scan.commits.len}
+	for c in scan.commits {
+		members << [repository_id.str(), scan.object_format, c.object_id]
+	}
+	if members.len > 0 {
+		d.conn.exec_param_many('INSERT OR IGNORE INTO repository_commits (repository_id, commit_id)
+			VALUES (?, (SELECT id FROM commits WHERE object_format = ? AND object_id = ?))', members)!
+	}
+
+	d.conn.exec_param_many('UPDATE repositories SET object_format = ? WHERE id = ?', [
+		scan.object_format,
+		repository_id.str(),
+	])!
+	return int(d.conn.q_int('SELECT COALESCE(MAX(id), 0) FROM commits')! - before)
+}
+
+fn add_identity(mut rows [][]string, mut seen map[string]bool, name string, email string) {
+	key := name + '\x1f' + email
+	if key in seen {
+		return
+	}
+	seen[key] = true
+	rows << [name, email, identity.norm_email(email)]
+}
+
+fn bit(b bool) string {
+	return if b { '1' } else { '0' }
+}

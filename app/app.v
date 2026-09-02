@@ -2,6 +2,7 @@ module app
 
 import os
 import config
+import index
 import source
 
 // The command surface, verbatim. A raw string: v fmt (for now) collapses an ordinary
@@ -188,8 +189,20 @@ fn identity_cmd(mut c config.Config, f Flags) !int {
 			return 0
 		}
 		'candidates' {
-			// TODO : the unmatched identities are a query, needs index
-			return error("'identity candidates' is not implemented yet")
+			mut d := index.open(c.paths.db_file())!
+			defer {
+				d.close() or {}
+			}
+			cands := d.identity_candidates()!
+			if cands.len == 0 {
+				println('no unmatched identities')
+				return 0
+			}
+			println('  authored  committed  repos  identity')
+			for cand in cands {
+				println('  ${cand.authored:8}  ${cand.committed:9}  ${cand.repositories:5}  ${cand.name} <${cand.email}>')
+			}
+			return 0
 		}
 		else {
 			return error('usage: gitlife identity <add|list|candidates>')
