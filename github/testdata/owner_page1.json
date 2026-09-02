@@ -1,0 +1,15 @@
+{
+  "data": {
+    "rateLimit": { "remaining": 4998, "resetAt": "2026-08-29T13:00:00Z" },
+    "repositoryOwner": {
+      "__typename": "User",
+      "repositories": {
+        "pageInfo": { "hasNextPage": true, "endCursor": "Y3Vyc29yOjE=" },
+        "nodes": [
+          { "nameWithOwner": "nepinhum/gitlife", "url": "https://github.com/nepinhum/gitlife", "isFork": false, "isPrivate": false, "isArchived": false },
+          { "nameWithOwner": "nepinhum/dotfiles", "url": "https://github.com/nepinhum/dotfiles.git", "isFork": false, "isPrivate": true, "isArchived": false }
+        ]
+      }
+    }
+  }
+}

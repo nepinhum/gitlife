@@ -1,0 +1,6 @@
+{
+  "data": { "repositoryOwner": null },
+  "errors": [
+    { "type": "FORBIDDEN", "message": "Resource not accessible by personal access token" }
+  ]
+}

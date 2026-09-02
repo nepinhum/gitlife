@@ -1,0 +1,14 @@
+{
+  "data": {
+    "rateLimit": { "remaining": 4990, "resetAt": "2026-08-29T13:00:00Z" },
+    "repositoryOwner": {
+      "__typename": "Organization",
+      "repositories": {
+        "pageInfo": { "hasNextPage": false, "endCursor": null },
+        "nodes": [
+          { "nameWithOwner": "vlang/v", "url": "https://github.com/vlang/v", "isFork": false, "isPrivate": false, "isArchived": false }
+        ]
+      }
+    }
+  }
+}

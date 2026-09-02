@@ -1,0 +1,14 @@
+{
+  "data": {
+    "rateLimit": { "remaining": 4997, "resetAt": "2026-08-29T13:00:00Z" },
+    "repositoryOwner": {
+      "__typename": "User",
+      "repositories": {
+        "pageInfo": { "hasNextPage": false, "endCursor": null },
+        "nodes": [
+          { "nameWithOwner": "nepinhum/v", "url": "https://github.com/nepinhum/v", "isFork": true, "isPrivate": false, "isArchived": false }
+        ]
+      }
+    }
+  }
+}

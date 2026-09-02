@@ -1,0 +1,13 @@
+{
+  "data": {
+    "repositoryOwner": {
+      "__typename": "User",
+      "repositories": {
+        "pageInfo": { "hasNextPage": true, "endCursor": null },
+        "nodes": [
+          { "nameWithOwner": "nepinhum/only", "url": "https://github.com/nepinhum/only", "isFork": false, "isPrivate": false, "isArchived": false }
+        ]
+      }
+    }
+  }
+}

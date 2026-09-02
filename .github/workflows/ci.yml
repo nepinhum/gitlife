@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - dev
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install SQLite
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+
+      - name: Setup V
+        uses: vlang/setup-v@v1.7
+
+      - name: Format
+        run: v fmt -verify . # it's broken (mostly), so you can ignore if it fails
+
+      - name: Test
+        run: v -old-compiler test .
+
+      - name: Build
+        run: v -old-compiler -prod -o gitlife .

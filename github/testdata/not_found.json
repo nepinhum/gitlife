@@ -1,0 +1,6 @@
+{
+  "data": { "repositoryOwner": null },
+  "errors": [
+    { "type": "NOT_FOUND", "message": "Could not resolve to a User with the login of 'ghost'." }
+  ]
+}

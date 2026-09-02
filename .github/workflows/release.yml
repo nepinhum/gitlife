@@ -1,0 +1,75 @@
+# A release is a tag. Pushing v0.1.0 builds it, packages it and publishes it;
+# nothing else does. An ordinary commit to master never ships anything.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # git describe needs the history behind the tag
+
+      - name: Install SQLite
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+
+      - name: Setup V
+        uses: vlang/setup-v@v1.7
+
+      # The tag is what people will quote in a bug report and v.mod is what
+      # 'gitlife version' prints. A release where they disagree is a release
+      # nobody can identify.
+      - name: Check the tag against v.mod
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="${tag%%-*}" # a v0.1.0-rc1 dry run still tests 0.1.0
+          manifest=$(sed -n "s/^[[:space:]]*version:[[:space:]]*'\(.*\)'/\1/p" v.mod)
+          echo "tag ${GITHUB_REF_NAME}, version ${version}, v.mod ${manifest}"
+          test "${version}" = "${manifest}"
+
+      - name: Test
+        run: v -old-compiler test .
+
+      # The commit, not 'git describe': on a tagged commit describe answers with
+      # the tag, and 'gitlife v0.1.0 (v0.1.0)' tells nobody anything.
+      - name: Build
+        run: |
+          GITLIFE_COMMIT=$(git rev-parse --short HEAD) \
+            v -old-compiler -prod -o gitlife .
+          ./gitlife version
+
+      - name: Package
+        run: |
+          name="gitlife-${GITHUB_REF_NAME}-linux-amd64"
+          mkdir "${name}"
+          cp gitlife README.md LICENSE "${name}/"
+          cp -r docs "${name}/"
+          tar czf "${name}.tar.gz" "${name}"
+          sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A tag carrying a suffix, v0.1.0-rc1, is a rehearsal and is published
+          # as one.
+          prerelease=""
+          case "${GITHUB_REF_NAME}" in
+            *-*) prerelease="--prerelease" ;;
+          esac
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            ${prerelease} \
+            gitlife-*.tar.gz gitlife-*.tar.gz.sha256

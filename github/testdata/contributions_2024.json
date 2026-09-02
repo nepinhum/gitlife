@@ -1,0 +1,13 @@
+{
+  "data": {
+    "rateLimit": { "remaining": 4994, "resetAt": "2026-08-29T13:00:00Z" },
+    "user": {
+      "contributionsCollection": {
+        "commitContributionsByRepository": [
+          { "repository": { "nameWithOwner": "someorg/secret-tool", "url": "https://github.com/someorg/secret-tool", "isFork": false, "isPrivate": true, "isArchived": false } },
+          { "repository": { "nameWithOwner": "vlang/v", "url": "https://github.com/vlang/v", "isFork": false, "isPrivate": false, "isArchived": false } }
+        ]
+      }
+    }
+  }
+}

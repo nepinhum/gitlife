@@ -1,0 +1,4 @@
+{
+  "message": "You have exceeded a secondary rate limit. Please wait a few minutes before you try again.",
+  "documentation_url": "https://docs.github.com/rest/overview/rate-limits-for-the-rest-api"
+}
