@@ -75,6 +75,9 @@ fn dispatch(command string, f Flags) !int {
 		'source' {
 			return source_cmd(mut c, f)
 		}
+		'identity' {
+			return identity_cmd(mut c, f)
+		}
 		else {
 			// TODO : one arm per command as its module lands
 			return error("'${command}' is not implemented yet")
@@ -150,4 +153,53 @@ fn source_cmd(mut c config.Config, f Flags) !int {
 			return error('usage: gitlife source <add|list|remove>')
 		}
 	}
+}
+
+fn identity_cmd(mut c config.Config, f Flags) !int {
+	if f.rest.len == 0 {
+		return error('usage: gitlife identity <add|list|candidates>')
+	}
+	match f.rest[0] {
+		'add' {
+			if f.name == '' && f.email == '' {
+				return error('usage: gitlife identity add --name <name> | --email <email>')
+			}
+			i := config.Identity{
+				name: f.name
+				email: f.email
+			}
+			if c.identities.any(it.name == i.name && it.email == i.email) {
+				println('already accepted')
+				return 0
+			}
+			c.identities << i
+			c.save()!
+			println('accepted ${describe(i)}')
+			return 0
+		}
+		'list' {
+			if c.identities.len == 0 {
+				println('no identities accepted')
+				return 0
+			}
+			for i in c.identities {
+				println(describe(i))
+			}
+			return 0
+		}
+		'candidates' {
+			// TODO : the unmatched identities are a query, needs index
+			return error("'identity candidates' is not implemented yet")
+		}
+		else {
+			return error('usage: gitlife identity <add|list|candidates>')
+		}
+	}
+}
+
+fn describe(i config.Identity) string {
+	if i.name != '' && i.email != '' {
+		return '${i.name} <${i.email}>'
+	}
+	return if i.name != '' { 'name ${i.name}' } else { 'email ${i.email}' }
 }
