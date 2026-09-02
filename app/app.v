@@ -1,10 +1,13 @@
 module app
 
 import os
+import cache
 import config
 import credentials
 import index
+import report
 import source
+import syncer
 
 // The command surface, verbatim. A raw string: v fmt (for now) collapses an ordinary
 // multiline literal into one line of \n escapes.
@@ -37,8 +40,6 @@ filters:
   --by <period>      timeline bucket: day, month (default) or year
   --jobs <n>         repositories to sync at once (default: one per CPU)
 "
-
-const commands = ['source', 'identity', 'sync', 'purge', 'summary', 'repos', 'commits', 'timeline']
 
 fn usage() string {
 	return '${build_info()} - a provider independent history of your work in Git\n\n' + help
@@ -90,9 +91,6 @@ fn credential_helper(args []string) int {
 // returns an error and run turns it into 1, argv that cannot be parsed never
 // reaches here and is 2.
 fn dispatch(command string, f Flags) !int {
-	if command !in commands {
-		return error("unknown command '${command}'; try 'gitlife help'")
-	}
 	paths := config.paths()
 	mut c := config.load(paths)!
 	match command {
@@ -102,9 +100,17 @@ fn dispatch(command string, f Flags) !int {
 		'identity' {
 			return identity_cmd(mut c, f)
 		}
+		'sync' {
+			return sync_cmd(c, paths, f)
+		}
+		'purge' {
+			return purge_cmd(c, paths, f)
+		}
+		'summary', 'repos', 'commits', 'timeline' {
+			return report_cmd(command, c, paths, f)
+		}
 		else {
-			// TODO : one arm per command as its module lands
-			return error("'${command}' is not implemented yet")
+			return error("unknown command '${command}'; try 'gitlife help'")
 		}
 	}
 }
@@ -230,6 +236,116 @@ fn identity_cmd(mut c config.Config, f Flags) !int {
 		else {
 			return error('usage: gitlife identity <add|list|candidates>')
 		}
+	}
+}
+
+fn sync_cmd(c config.Config, paths config.Paths, f Flags) !int {
+	if c.sources.len == 0 {
+		return error("no sources configured; try 'gitlife source add local ~/dev'")
+	}
+	selector := if f.rest.len > 0 { f.rest[0] } else { '' }
+	mut d := index.open(paths.db_file())!
+	defer {
+		d.close() or {}
+	}
+	r := syncer.run(c, mut d, syncer.Options{
+		selector: selector
+		jobs: f.jobs
+	})!
+	println(if f.format == 'json' { report.sync_json(r) } else { report.sync_table(r) })
+	// A failed source or repository makes the whole run nonzero, it lets a
+	// script tell a partial sync from a clean one.
+	return if r.failed > 0 { 1 } else { 0 }
+}
+
+// purge_cmd forgets what no configured source can still reach: the repositories
+// of a removed source, the commits only they held and the clones nothing points
+// at. A sync can rebuild all of it, but it is deleted, that is what --dry-run
+// counts first.
+fn purge_cmd(c config.Config, paths config.Paths, f Flags) !int {
+	mut d := index.open(paths.db_file())!
+	defer {
+		d.close() or {}
+	}
+	// The config is the truth about what's configured. The database's 'active'
+	// flag is only as fresh as the last sync and a source removed since then
+	// must not keep its history alive.
+	d.deactivate_sources_except(c.sources.filter(it.active).map(it.id()))!
+
+	p := d.purge(f.dry_run)!
+	store := cache.Cache{
+		root: paths.repos_dir()
+	}
+	pruned := store.prune(p.keep, f.dry_run)!
+	println(if f.format == 'json' {
+		report.purge_json(p, pruned, f.dry_run)
+	} else {
+		report.purge_table(p, pruned, f.dry_run)
+	})
+	return 0
+}
+
+// Every report answers the same question about the same commits and differs
+// only in how much is shown. One path: open the index, build the filter,
+// render.
+fn report_cmd(command string, c config.Config, paths config.Paths, f Flags) !int {
+	mut d := index.open(paths.db_file())!
+	defer {
+		d.close() or {}
+	}
+	filter := narrow(c, mut d, f)!
+	json := f.format == 'json'
+	out := match command {
+		'repos' {
+			rows := d.repos(filter)!
+			if json { report.repos_json(rows) } else { report.repos_table(rows) }
+		}
+		'commits' {
+			rows := d.commits(filter, f.limit)!
+			if json { report.commits_json(rows) } else { report.commits_table(rows) }
+		}
+		'timeline' {
+			rows := d.timeline(filter, f.by)!
+			if json { report.timeline_json(rows) } else { report.timeline_table(rows) }
+		}
+		else {
+			s := d.summary(filter)!
+			if json { report.summary_json(s) } else { report.summary_table(s) }
+		}
+	}
+	println(out)
+	return 0
+}
+
+// narrow turns the shared filter flags into a Filter. Accepted identities are
+// pushed into the database first: the user writes them in config.toml, the
+// queries read them from a table.
+fn narrow(c config.Config, mut d index.DB, f Flags) !index.Filter {
+	mut names := []string{}
+	mut emails := []string{}
+	for i in c.identities {
+		if i.name != '' {
+			names << i.name
+		}
+		if i.email != '' {
+			emails << i.email
+		}
+	}
+	d.set_accepted(names, emails)!
+
+	mut repo_ids := []i64{}
+	if f.repo != '' {
+		repo_ids = d.resolve_repositories(f.repo)!
+	}
+	if f.source != '' {
+		ids := d.repositories_of_source(f.source)!
+		repo_ids = if repo_ids.len == 0 { ids.clone() } else { repo_ids.filter(it in ids) }
+	}
+	return index.Filter{
+		since: f.since
+		until: f.until
+		repository_ids: repo_ids
+		role: f.role
 	}
 }
 
