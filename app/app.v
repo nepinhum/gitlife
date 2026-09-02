@@ -2,6 +2,7 @@ module app
 
 import os
 import config
+import credentials
 import index
 import source
 
@@ -52,6 +53,11 @@ pub fn run(args []string) int {
 		println(build_info())
 		return 0
 	}
+	// Git invokes this and expects nothing on stdout but its own protocol. It
+	// runs before the config is loaded.
+	if args[0] == 'credential-helper' {
+		return credential_helper(args[1..])
+	}
 	f := parse(args[1..]) or {
 		eprintln('gitlife: ${err.msg()}')
 		return 2
@@ -61,6 +67,23 @@ pub fn run(args []string) int {
 		return 1
 	}
 	return code
+}
+
+// credential_helper implements git's credential helper protocol. Only 'get'
+// answers. 'store' and 'erase' succeed silently because gitlife persists no
+// credential.
+fn credential_helper(args []string) int {
+	operation := if args.len > 0 { args[0] } else { '' }
+	if operation != 'get' {
+		return 0
+	}
+	reply := credentials.answer(os.get_raw_lines_joined(), [
+		credentials.github_host(true),
+	])
+	if reply != '' {
+		print(reply)
+	}
+	return 0
 }
 
 // dispatch runs one command and answers with its exit code. A command that fails
