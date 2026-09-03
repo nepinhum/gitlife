@@ -32,9 +32,12 @@ pub:
 pub fn paths() Paths {
 	home := os.home_dir()
 	return Paths{
-		config_dir: pick('GITLIFE_CONFIG_DIR', 'XDG_CONFIG_HOME', os.join_path(home, '.config'), 'gitlife')
-		state_dir: pick('GITLIFE_STATE_DIR', 'XDG_STATE_HOME', os.join_path(home, '.local', 'state'), 'gitlife')
-		cache_dir: pick('GITLIFE_CACHE_DIR', 'XDG_CACHE_HOME', os.join_path(home, '.cache'), 'gitlife')
+		config_dir: pick('GITLIFE_CONFIG_DIR', 'XDG_CONFIG_HOME', os.join_path(home, '.config'),
+			'gitlife')
+		state_dir:  pick('GITLIFE_STATE_DIR', 'XDG_STATE_HOME', os.join_path(home, '.local',
+			'state'), 'gitlife')
+		cache_dir:  pick('GITLIFE_CACHE_DIR', 'XDG_CACHE_HOME', os.join_path(home, '.cache'),
+			'gitlife')
 	}
 }
 
@@ -90,8 +93,8 @@ pub fn load(p Paths) !Config {
 			return error("${path}: unknown source kind '${kind}'")
 		}
 		c.sources << Source{
-			kind: kind
-			spec: spec
+			kind:   kind
+			spec:   spec
 			active: m['active'] or { toml.Any(true) }.bool()
 		}
 	}
@@ -103,7 +106,7 @@ pub fn load(p Paths) !Config {
 			return error("${path}: every [[identity]] needs a 'name' or an 'email'")
 		}
 		c.identities << Identity{
-			name: name
+			name:  name
 			email: email
 		}
 	}

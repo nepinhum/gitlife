@@ -39,8 +39,8 @@ pub fn (c Cache) prune(keep []string, dry_run bool) !Pruned {
 	}
 	return Pruned{
 		clones: removed.len
-		bytes: bytes
-		dirs: removed
+		bytes:  bytes
+		dirs:   removed
 	}
 }
 

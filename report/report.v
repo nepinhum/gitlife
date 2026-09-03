@@ -236,7 +236,7 @@ pub fn purge_json(p index.Purge, c cache.Pruned, dry_run bool) string {
 		'bytes':        c.bytes
 		'directories':  json2.Any(c.dirs.map(json2.Any(it)))
 	},
-		prettify: true
+		prettify:       true
 		escape_unicode: true
 	)
 }

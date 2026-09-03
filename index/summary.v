@@ -66,7 +66,9 @@ fn (f Filter) mine(role string) (string, []string) {
 	if f.repository_ids.len > 0 {
 		where << 'EXISTS (SELECT 1 FROM repository_commits rc WHERE rc.commit_id = c.id\n\t\t\tAND rc.repository_id IN (${ids(f.repository_ids)}))'
 	}
-	q := 'SELECT c.id AS id, c.object_id AS object_id, c.subject AS subject,\n\t\t\tc.${role}_date AS d, c.${role}_time AS t\n\t\tFROM commits c, git_identities gi\n\t\tWHERE ' + where.join(' AND ')
+	q :=
+		'SELECT c.id AS id, c.object_id AS object_id, c.subject AS subject,\n\t\t\tc.${role}_date AS d, c.${role}_time AS t\n\t\tFROM commits c, git_identities gi\n\t\tWHERE ' +
+		where.join(' AND ')
 	return q, params
 }
 
@@ -100,17 +102,17 @@ pub fn (mut d DB) summary(f Filter) !Summary {
 	edge := 'SELECT object_id, d, subject FROM mine ORDER BY t'
 
 	return Summary{
-		role: role
-		authored_commits: d.count(with(authored, total), authored_params)!
+		role:              role
+		authored_commits:  d.count(with(authored, total), authored_params)!
 		committed_commits: d.count(with(committed, total), committed_params)!
-		repositories: d.count(with(sel, repos), params)!
-		repos_by_source: d.counts(by_source, [])!
-		first: d.commit_ref(with(sel, edge + ' ASC, object_id ASC LIMIT 1'), params)!
-		latest: d.commit_ref(with(sel, edge + ' DESC, object_id ASC LIMIT 1'), params)!
-		by_year: d.counts(with(sel, years), params)!
-		top_repositories: d.counts(with(sel, top), params)!
-		candidates: d.identity_candidates()!
-		accepted: d.count('SELECT COUNT(*) FROM accepted_identities', [])!
+		repositories:      d.count(with(sel, repos), params)!
+		repos_by_source:   d.counts(by_source, [])!
+		first:             d.commit_ref(with(sel, edge + ' ASC, object_id ASC LIMIT 1'), params)!
+		latest:            d.commit_ref(with(sel, edge + ' DESC, object_id ASC LIMIT 1'), params)!
+		by_year:           d.counts(with(sel, years), params)!
+		top_repositories:  d.counts(with(sel, top), params)!
+		candidates:        d.identity_candidates()!
+		accepted:          d.count('SELECT COUNT(*) FROM accepted_identities', [])!
 	}
 }
 
@@ -119,18 +121,20 @@ fn with(mine string, query string) string {
 }
 
 pub fn (mut d DB) identity_candidates() ![]Candidate {
-	rows := d.conn.exec('SELECT gi.name, gi.email,\n\t\t\t(SELECT COUNT(*) FROM commits c WHERE c.author_identity_id = gi.id),\n\t\t\t(SELECT COUNT(*) FROM commits c WHERE c.committer_identity_id = gi.id),\n\t\t\t(SELECT COUNT(DISTINCT rc.repository_id) FROM repository_commits rc\n\t\t\t JOIN commits c ON c.id = rc.commit_id\n\t\t\t WHERE c.author_identity_id = gi.id OR c.committer_identity_id = gi.id)\n\t\tFROM git_identities gi\n\t\tWHERE NOT ${accepted}\n\t\tORDER BY 3 DESC, 4 DESC, 2 ASC\n\t\tLIMIT 20')!
+	rows :=
+		d.conn.exec('SELECT gi.name, gi.email,\n\t\t\t(SELECT COUNT(*) FROM commits c WHERE c.author_identity_id = gi.id),\n\t\t\t(SELECT COUNT(*) FROM commits c WHERE c.committer_identity_id = gi.id),\n\t\t\t(SELECT COUNT(DISTINCT rc.repository_id) FROM repository_commits rc\n\t\t\t JOIN commits c ON c.id = rc.commit_id\n\t\t\t WHERE c.author_identity_id = gi.id OR c.committer_identity_id = gi.id)\n\t\tFROM git_identities gi\n\t\tWHERE NOT ${accepted}\n\t\tORDER BY 3 DESC, 4 DESC, 2 ASC\n\t\tLIMIT 20')!
 	return rows.map(Candidate{
-		name: it.val(0)
-		email: it.val(1)
-		authored: it.val(2).int()
-		committed: it.val(3).int()
+		name:         it.val(0)
+		email:        it.val(1)
+		authored:     it.val(2).int()
+		committed:    it.val(3).int()
 		repositories: it.val(4).int()
 	})
 }
 
 pub fn (mut d DB) resolve_repositories(name_or_id string) ![]i64 {
-	rows := d.conn.exec_param2('SELECT id FROM repositories WHERE display_name = ? OR id = ?', name_or_id, name_or_id)!
+	rows := d.conn.exec_param2('SELECT id FROM repositories WHERE display_name = ? OR id = ?',
+		name_or_id, name_or_id)!
 	if rows.len == 0 {
 		return error("no repository matches '${name_or_id}'")
 	}
@@ -141,7 +145,8 @@ pub fn (mut d DB) resolve_repositories(name_or_id string) ![]i64 {
 }
 
 pub fn (mut d DB) repositories_of_source(source_id string) ![]i64 {
-	rows := d.conn.exec_param('SELECT repository_id FROM discoveries WHERE source_id = ?', source_id)!
+	rows := d.conn.exec_param('SELECT repository_id FROM discoveries WHERE source_id = ?',
+		source_id)!
 	if rows.len == 0 {
 		return error("source '${source_id}' has no discovered repositories")
 	}
@@ -171,7 +176,7 @@ fn (mut d DB) commit_ref(q string, params []string) !CommitRef {
 	}
 	return CommitRef{
 		object_id: rows[0].val(0)
-		date: rows[0].val(1)
-		subject: rows[0].val(2)
+		date:      rows[0].val(1)
+		subject:   rows[0].val(2)
 	}
 }

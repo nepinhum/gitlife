@@ -52,10 +52,10 @@ fn (g Git) at(dir string, args []string) !proc.Result {
 // credential travels through.
 pub fn (g Git) at_with(dir string, args []string, extra map[string]string) !proc.Result {
 	return proc.check(proc.Cmd{
-		exe: g.exe
+		exe:  g.exe
 		args: args
-		cwd: dir
-		env: git_env(extra)
+		cwd:  dir
+		env:  git_env(extra)
 	})
 }
 
@@ -78,10 +78,10 @@ pub fn (g Git) refs_digest(dir string) !string {
 	lines.sort()
 	// An empty repository has no HEAD to resolve; that is not a failure.
 	head := proc.run(proc.Cmd{
-		exe: g.exe
+		exe:  g.exe
 		args: ['rev-parse', '--verify', '--quiet', 'HEAD']
-		cwd: dir
-		env: git_env(map[string]string{})
+		cwd:  dir
+		env:  git_env(map[string]string{})
 	})!
 	lines << 'HEAD ' + head.stdout.trim_space()
 	return sha256.sum256(lines.join('\n').bytes()).hex()
@@ -90,10 +90,10 @@ pub fn (g Git) refs_digest(dir string) !string {
 // remotes lists a repository's remotes by name.
 pub fn (g Git) remotes(dir string) !map[string]string {
 	result := proc.run(proc.Cmd{
-		exe: g.exe
+		exe:  g.exe
 		args: ['config', '--get-regexp', r'^remote\..*\.url']
-		cwd: dir
-		env: git_env(map[string]string{})
+		cwd:  dir
+		env:  git_env(map[string]string{})
 	})!
 	mut remotes := map[string]string{}
 	for line in result.stdout.split_into_lines() {
@@ -136,8 +136,8 @@ pub fn (g Git) commits(dir string) ![]Commit {
 pub fn (g Git) scan(dir string) !Scan {
 	return Scan{
 		object_format: g.object_format(dir)!
-		refs_digest: g.refs_digest(dir)!
-		commits: g.commits(dir)!
+		refs_digest:   g.refs_digest(dir)!
+		commits:       g.commits(dir)!
 	}
 }
 
@@ -157,17 +157,17 @@ pub fn parse_commits(out string) ![]Commit {
 	mut commits := []Commit{cap: lines.len / commit_fields}
 	for i := 0; i < lines.len; i += commit_fields {
 		commits << Commit{
-			object_id: lines[i]
-			parents: lines[i + 1]
-			author_name: lines[i + 2]
-			author_email: lines[i + 3]
-			author_time: lines[i + 4].i64()
-			author_tz: parse_tz(lines[i + 5])
-			committer_name: lines[i + 6]
+			object_id:       lines[i]
+			parents:         lines[i + 1]
+			author_name:     lines[i + 2]
+			author_email:    lines[i + 3]
+			author_time:     lines[i + 4].i64()
+			author_tz:       parse_tz(lines[i + 5])
+			committer_name:  lines[i + 6]
 			committer_email: lines[i + 7]
-			committer_time: lines[i + 8].i64()
-			committer_tz: parse_tz(lines[i + 9])
-			subject: lines[i + 10]
+			committer_time:  lines[i + 8].i64()
+			committer_tz:    parse_tz(lines[i + 9])
+			subject:         lines[i + 10]
 		}
 	}
 	return commits

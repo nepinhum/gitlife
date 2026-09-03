@@ -79,9 +79,9 @@ fn (mut d DB) apply_purge() !Purge {
 	rows := d.conn.exec("SELECT value FROM repository_locations WHERE kind = 'remote'")!
 	return Purge{
 		repositories: repositories
-		commits: commits
-		identities: identities
-		sources: sources
-		keep: rows.map(it.val(0))
+		commits:      commits
+		identities:   identities
+		sources:      sources
+		keep:         rows.map(it.val(0))
 	}
 }

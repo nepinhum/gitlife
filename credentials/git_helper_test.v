@@ -11,9 +11,9 @@ import os
 fn hosts() []HostCredential {
 	return [
 		HostCredential{
-			host: 'github.com'
+			host:     'github.com'
 			username: 'x-access-token'
-			chain: [Provider(EnvVar{'GITLIFE_TEST_TOKEN'})]
+			chain:    [Provider(EnvVar{'GITLIFE_TEST_TOKEN'})]
 		},
 	]
 }
@@ -93,6 +93,7 @@ fn test_git_asks_our_helper_and_not_the_one_already_configured() {
 	assert !filled.output.contains('ghp_stale'), 'an ambient helper must not answer first'
 
 	// And the proof that the reset is what did it.
-	without_reset := os.execute('${request} | ${isolated} git ${args[2]} "${args[3]}" credential fill')
+	without_reset :=
+		os.execute('${request} | ${isolated} git ${args[2]} "${args[3]}" credential fill')
 	assert without_reset.output.contains('ghp_stale'), 'without the reset the planted helper wins'
 }

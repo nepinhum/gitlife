@@ -20,13 +20,13 @@ const v1 = [
 		active      INTEGER NOT NULL DEFAULT 1,
 		created_at  INTEGER NOT NULL
 	)',
-	'CREATE TABLE repositories (
+	"CREATE TABLE repositories (
 		id            INTEGER PRIMARY KEY,
 		display_name  TEXT NOT NULL,
 		object_format TEXT NOT NULL,
-		refs_digest   TEXT NOT NULL DEFAULT (\'\'),
+		refs_digest   TEXT NOT NULL DEFAULT (''),
 		created_at    INTEGER NOT NULL
-	)',
+	)",
 	'CREATE TABLE repository_locations (
 		id            INTEGER PRIMARY KEY,
 		repository_id INTEGER NOT NULL REFERENCES repositories(id),
@@ -41,14 +41,14 @@ const v1 = [
 		url_norm      TEXT NOT NULL,
 		PRIMARY KEY (repository_id, name)
 	)',
-	'CREATE TABLE discoveries (
+	"CREATE TABLE discoveries (
 		source_id     TEXT NOT NULL,
 		repository_id INTEGER NOT NULL REFERENCES repositories(id),
 		first_seen    INTEGER NOT NULL,
 		last_seen     INTEGER NOT NULL,
-		metadata      TEXT NOT NULL DEFAULT (\'\'),
+		metadata      TEXT NOT NULL DEFAULT (''),
 		PRIMARY KEY (source_id, repository_id)
-	)',
+	)",
 	'CREATE TABLE git_identities (
 		id         INTEGER PRIMARY KEY,
 		name       TEXT NOT NULL,
@@ -56,11 +56,11 @@ const v1 = [
 		email_norm TEXT NOT NULL,
 		UNIQUE (name, email)
 	)',
-	'CREATE TABLE commits (
+	"CREATE TABLE commits (
 		id                    INTEGER PRIMARY KEY,
 		object_format         TEXT NOT NULL,
 		object_id             TEXT NOT NULL,
-		parents               TEXT NOT NULL DEFAULT (\'\'),
+		parents               TEXT NOT NULL DEFAULT (''),
 		author_identity_id    INTEGER NOT NULL REFERENCES git_identities(id),
 		author_time           INTEGER NOT NULL,
 		author_tz             INTEGER NOT NULL,
@@ -71,7 +71,7 @@ const v1 = [
 		committer_date        TEXT NOT NULL,
 		subject               TEXT NOT NULL,
 		UNIQUE (object_format, object_id)
-	)',
+	)",
 	'CREATE TABLE repository_commits (
 		repository_id INTEGER NOT NULL REFERENCES repositories(id),
 		commit_id     INTEGER NOT NULL REFERENCES commits(id),
@@ -84,15 +84,15 @@ const v1 = [
 		value_norm TEXT NOT NULL,
 		PRIMARY KEY (kind, value_norm)
 	)',
-	'CREATE TABLE sync_results (
+	"CREATE TABLE sync_results (
 		scope           TEXT NOT NULL,
 		ref_id          TEXT NOT NULL,
 		status          TEXT NOT NULL,
-		message         TEXT NOT NULL DEFAULT (\'\'),
+		message         TEXT NOT NULL DEFAULT (''),
 		last_attempt_at INTEGER NOT NULL,
 		last_success_at INTEGER NOT NULL DEFAULT 0,
 		PRIMARY KEY (scope, ref_id)
-	)',
+	)",
 	'CREATE INDEX commits_author ON commits (author_identity_id, author_date)',
 	'CREATE INDEX commits_committer ON commits (committer_identity_id, committer_date)',
 	'CREATE INDEX repository_commits_commit ON repository_commits (commit_id)',

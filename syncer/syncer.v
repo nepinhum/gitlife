@@ -18,7 +18,7 @@ const max_jobs = 8
 pub struct Options {
 pub:
 	selector string // sync only this source id; empty means every active one
-	jobs     int // 0 chooses a worker per CPU, to max_jobs
+	jobs     int    // 0 chooses a worker per CPU, to max_jobs
 	deps     Deps
 }
 
@@ -29,8 +29,8 @@ pub:
 	status      string // ok | unchanged | failed
 	message     string
 	action      string // cloned | fetched | read
-	commits     int // commits the location holds
-	new_commits int // of those, the ones the index had never seen
+	commits     int    // commits the location holds
+	new_commits int    // of those, the ones the index had never seen
 	elapsed_ms  int
 }
 
@@ -170,18 +170,18 @@ pub fn run(c config.Config, mut d index.DB, o Options) !Report {
 	}
 
 	p := Pass{
-		git: git
-		store: cache.Cache{
+		git:         git
+		store:       cache.Cache{
 			root: c.paths.repos_dir()
-			git: git
-			exe: os.executable()
+			git:  git
+			exe:  os.executable()
 		}
-		deps: o.deps
-		token: token
+		deps:        o.deps
+		token:       token
 		token_error: token_error
-		env: env
-		jobs: workers(o.jobs)
-		now: now
+		env:         env
+		jobs:        workers(o.jobs)
+		now:         now
 	}
 
 	mut report := Report{
@@ -195,7 +195,7 @@ pub fn run(c config.Config, mut d index.DB, o Options) !Report {
 		for f in discover_source(p, s, mut d, mut report, mut broken) {
 			queue << Job{
 				source_id: s.id()
-				found: f
+				found:     f
 			}
 		}
 	}
@@ -204,10 +204,10 @@ pub fn run(c config.Config, mut d index.DB, o Options) !Report {
 	scan, unchanged := plan(tasks)
 	for task in unchanged {
 		report.add(Outcome{
-			source: task.source_id
+			source:     task.source_id
 			repository: task.name
-			status: 'unchanged'
-			action: task.action
+			status:     'unchanged'
+			action:     task.action
 			elapsed_ms: task.elapsed_ms
 		})
 		d.record_sync('repository', task.location_key, 'ok', '', p.now) or {}
@@ -252,7 +252,8 @@ fn discover_source(p Pass, s config.Source, mut d index.DB, mut report Report, m
 			discover_github(p, s, id, mut d, mut report, mut broken)
 		}
 		else {
-			fail_source(mut d, mut report, mut broken, id, "source kind '${s.kind}' is not supported yet", p.now)
+			fail_source(mut d, mut report, mut broken, id,
+				"source kind '${s.kind}' is not supported yet", p.now)
 			[]discover.Found{}
 		}
 	}
@@ -296,8 +297,8 @@ fn prepare(p Pass, job Job) Prepared {
 	}
 	return Prepared{
 		...base
-		source_id: job.source_id
-		found: job.found
+		source_id:  job.source_id
+		found:      job.found
 		elapsed_ms: int(time.ticks() - started)
 	}
 }
@@ -315,11 +316,11 @@ fn gather(p Pass, job Job) !Prepared {
 		action = if entry.cloned { 'cloned' } else { 'fetched' }
 	}
 	return Prepared{
-		dir: dir
-		action: action
-		remotes: remotes
+		dir:           dir
+		action:        action
+		remotes:       remotes
 		object_format: p.git.object_format(dir)!
-		digest: p.git.refs_digest(dir)!
+		digest:        p.git.refs_digest(dir)!
 	}
 }
 
@@ -327,11 +328,13 @@ fn register(prepared []Prepared, mut d index.DB, mut report Report, mut broken m
 	mut tasks := []Task{}
 	for item in prepared {
 		if item.error != '' {
-			fail_repository(mut d, mut report, mut broken, item.source_id, item.found.name, location_key(item.found), item.error, now)
+			fail_repository(mut d, mut report, mut broken, item.source_id, item.found.name,
+				location_key(item.found), item.error, now)
 			continue
 		}
 		tasks << enter(item, mut d, now) or {
-			fail_repository(mut d, mut report, mut broken, item.source_id, item.found.name, location_key(item.found), err.msg(), now)
+			fail_repository(mut d, mut report, mut broken, item.source_id, item.found.name,
+				location_key(item.found), err.msg(), now)
 			continue
 		}
 	}
@@ -343,8 +346,8 @@ fn enter(item Prepared, mut d index.DB, now i64) !Task {
 	mut locations := []index.Location{}
 	if f.dir != '' {
 		locations << index.Location{
-			kind: if f.bare { 'bare' } else { 'worktree' }
-			key: 'dir:' + f.dir
+			kind:  if f.bare { 'bare' } else { 'worktree' }
+			key:   'dir:' + f.dir
 			value: f.dir
 		}
 		// The primary remote is what ties this working tree to the same repository
@@ -353,15 +356,15 @@ fn enter(item Prepared, mut d index.DB, now i64) !Task {
 		primary := gitrepo.primary_remote(item.remotes)
 		if primary != '' {
 			locations << index.Location{
-				kind: 'remote'
-				key: source.location_key(primary)
+				kind:  'remote'
+				key:   source.location_key(primary)
 				value: source.redact_url(primary)
 			}
 		}
 	} else {
 		locations << index.Location{
-			kind: 'remote'
-			key: source.location_key(f.url)
+			kind:  'remote'
+			key:   source.location_key(f.url)
 			value: source.redact_url(f.url)
 		}
 	}
@@ -374,16 +377,16 @@ fn enter(item Prepared, mut d index.DB, now i64) !Task {
 
 	scanned := locations[0].key
 	return Task{
-		source_id: item.source_id
+		source_id:     item.source_id
 		repository_id: repository_id
-		name: f.name
-		location_key: scanned
-		dir: item.dir
+		name:          f.name
+		location_key:  scanned
+		dir:           item.dir
 		object_format: item.object_format
-		digest: item.digest
-		action: item.action
-		elapsed_ms: item.elapsed_ms
-		changed: item.digest != d.location_digest(scanned)!
+		digest:        item.digest
+		action:        item.action
+		elapsed_ms:    item.elapsed_ms
+		changed:       item.digest != d.location_digest(scanned)!
 	}
 }
 
@@ -440,7 +443,7 @@ fn read_stride(p Pass, tasks []Task, first int, stride int) []Scanned {
 			continue
 		}
 		out << Scanned{
-			commits: commits
+			commits:    commits
 			elapsed_ms: int(time.ticks() - started)
 		}
 	}
@@ -461,26 +464,28 @@ fn write(tasks []Task, scans []Scanned, mut d index.DB, mut report Report, mut b
 	for i, task in tasks {
 		scan := scans[i]
 		if scan.error != '' {
-			fail_repository(mut d, mut report, mut broken, task.source_id, task.name, task.location_key, scan.error, now)
+			fail_repository(mut d, mut report, mut broken, task.source_id, task.name,
+				task.location_key, scan.error, now)
 			continue
 		}
 		fresh := d.write_snapshot(task.repository_id, gitrepo.Scan{
 			object_format: task.object_format
-			refs_digest: task.digest
-			commits: scan.commits
+			refs_digest:   task.digest
+			commits:       scan.commits
 		}, task.fresh) or {
-			fail_repository(mut d, mut report, mut broken, task.source_id, task.name, task.location_key, err.msg(), now)
+			fail_repository(mut d, mut report, mut broken, task.source_id, task.name,
+				task.location_key, err.msg(), now)
 			continue
 		}
 		d.set_location_digest(task.location_key, task.digest) or {}
 		report.add(Outcome{
-			source: task.source_id
-			repository: task.name
-			status: 'ok'
-			action: task.action
-			commits: scan.commits.len
+			source:      task.source_id
+			repository:  task.name
+			status:      'ok'
+			action:      task.action
+			commits:     scan.commits.len
 			new_commits: fresh
-			elapsed_ms: task.elapsed_ms + scan.elapsed_ms
+			elapsed_ms:  task.elapsed_ms + scan.elapsed_ms
 		})
 		d.record_sync('repository', task.location_key, 'ok', '', now) or {}
 	}
@@ -499,10 +504,12 @@ fn discover_github(p Pass, s config.Source, id string, mut d index.DB, mut repor
 	result := discover.github_repos(mut client, s.spec) or {
 		// The token's source is named, never its value. In CI the failing token is
 		// usually GITHUB_TOKEN, injected by the runner rather than by the user.
-		fail_source(mut d, mut report, mut broken, id, '${err.msg()} [token from ${p.token.source}]', p.now)
+		fail_source(mut d, mut report, mut broken, id,
+			'${err.msg()} [token from ${p.token.source}]', p.now)
 		return []discover.Found{}
 	}
-	mut note := '${id}: ${plural(result.found.len, 'repository')} found in ${plural(client.requests, 'API call')}'
+	mut note := '${id}: ${plural(result.found.len, 'repository')} found in ${plural(client.requests,
+		'API call')}'
 	if result.remaining >= 0 {
 		note += ', ${result.remaining} rate budget left'
 	}
@@ -524,8 +531,8 @@ fn plural(n int, word string) string {
 fn fail_source(mut d index.DB, mut report Report, mut broken map[string]bool, id string, msg string, now i64) {
 	broken[id] = true
 	report.add(Outcome{
-		source: id
-		status: 'failed'
+		source:  id
+		status:  'failed'
 		message: msg
 	})
 	d.record_sync('source', id, 'failed', msg, now) or {}
@@ -534,10 +541,10 @@ fn fail_source(mut d index.DB, mut report Report, mut broken map[string]bool, id
 fn fail_repository(mut d index.DB, mut report Report, mut broken map[string]bool, source_id string, name string, ref_id string, msg string, now i64) {
 	broken[source_id] = true
 	report.add(Outcome{
-		source: source_id
+		source:     source_id
 		repository: name
-		status: 'failed'
-		message: msg
+		status:     'failed'
+		message:    msg
 	})
 	d.record_sync('repository', ref_id, 'failed', msg, now) or {}
 }

@@ -18,9 +18,9 @@ pub:
 // username alongside a token; 'x-access-token' is the conventional one.
 pub fn github_host(allow_gh bool) HostCredential {
 	return HostCredential{
-		host: 'github.com'
+		host:     'github.com'
 		username: 'x-access-token'
-		chain: github_chain(allow_gh)
+		chain:    github_chain(allow_gh)
 	}
 }
 

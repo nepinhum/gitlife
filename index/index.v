@@ -70,8 +70,13 @@ pub fn (mut d DB) upsert_source(id string, kind string, spec string, active bool
 	d.conn.exec_param_many('INSERT INTO sources (id, kind, spec, active, created_at)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, spec = excluded.spec,
-		                              active = excluded.active', [id, kind, spec, bit(active),
-		now.str()])!
+		                              active = excluded.active', [
+		id,
+		kind,
+		spec,
+		bit(active),
+		now.str(),
+	])!
 }
 
 pub fn (mut d DB) deactivate_sources_except(ids []string) ! {
@@ -93,7 +98,8 @@ pub fn (mut d DB) deactivate_sources_except(ids []string) ! {
 pub fn (mut d DB) resolve_repository(locations []Location, name string, object_format string, now i64) !i64 {
 	mut owners := []i64{}
 	for location in locations {
-		rows := d.conn.exec_param('SELECT repository_id FROM repository_locations WHERE key = ?', location.key)!
+		rows := d.conn.exec_param('SELECT repository_id FROM repository_locations WHERE key = ?',
+			location.key)!
 		if rows.len == 0 {
 			continue
 		}
@@ -106,7 +112,11 @@ pub fn (mut d DB) resolve_repository(locations []Location, name string, object_f
 	mut id := i64(0)
 	if owners.len == 0 {
 		d.conn.exec_param_many('INSERT INTO repositories (display_name, object_format, created_at)
-			VALUES (?, ?, ?)', [name, object_format, now.str()])!
+			VALUES (?, ?, ?)', [
+			name,
+			object_format,
+			now.str(),
+		])!
 		id = d.conn.last_insert_rowid()
 	} else {
 		owners.sort()
@@ -118,11 +128,19 @@ pub fn (mut d DB) resolve_repository(locations []Location, name string, object_f
 
 	for location in locations {
 		d.conn.exec_param_many('INSERT OR IGNORE INTO repository_locations (repository_id, kind, key, value)
-			VALUES (?, ?, ?, ?)', [id.str(), location.kind, location.key, location.value])!
+			VALUES (?, ?, ?, ?)', [
+			id.str(),
+			location.kind,
+			location.key,
+			location.value,
+		])!
 	}
 	if object_format != '' {
 		d.conn.exec_param_many("UPDATE repositories SET object_format = ?
-			WHERE id = ? AND object_format = ''", [object_format, id.str()])!
+			WHERE id = ? AND object_format = ''", [
+			object_format,
+			id.str(),
+		])!
 	}
 	return id
 }
@@ -165,11 +183,13 @@ pub fn (mut d DB) replace_remotes(repository_id i64, remotes map[string]string) 
 	d.conn.exec_param('DELETE FROM repository_remotes WHERE repository_id = ?', repository_id.str())!
 	mut rows := [][]string{}
 	for remote_name, url in remotes {
-		rows << [repository_id.str(), remote_name, source.redact_url(url), source.normalize_url(url)]
+		rows << [repository_id.str(), remote_name, source.redact_url(url),
+			source.normalize_url(url)]
 	}
 	if rows.len > 0 {
 		d.conn.exec_param_many('INSERT OR IGNORE INTO repository_remotes (repository_id, name, url, url_norm)
-			VALUES (?, ?, ?, ?)', rows)!
+			VALUES (?, ?, ?, ?)',
+			rows)!
 	}
 }
 
@@ -232,7 +252,8 @@ fn (mut d DB) apply_accepted(names []string, emails []string) ! {
 	}
 	if rows.len > 0 {
 		d.conn.exec_param_many('INSERT OR IGNORE INTO accepted_identities (kind, value, value_norm)
-			VALUES (?, ?, ?)', rows)!
+			VALUES (?, ?, ?)',
+			rows)!
 	}
 }
 
@@ -264,7 +285,8 @@ fn (mut d DB) apply_snapshot(repository_id i64, scan gitrepo.Scan, fresh bool) !
 	}
 	if idents.len > 0 {
 		d.conn.exec_param_many('INSERT OR IGNORE INTO git_identities (name, email, email_norm)
-			VALUES (?, ?, ?)', idents)!
+			VALUES (?, ?, ?)',
+			idents)!
 	}
 
 	mut rows := [][]string{cap: scan.commits.len}
@@ -287,21 +309,23 @@ fn (mut d DB) apply_snapshot(repository_id i64, scan gitrepo.Scan, fresh bool) !
 		]
 	}
 	if rows.len > 0 {
-		d.conn.exec_param_many('INSERT OR IGNORE INTO commits (
+		d.conn.exec_param_many("INSERT OR IGNORE INTO commits (
 				object_format, object_id, parents,
 				author_identity_id, author_time, author_tz, author_date,
 				committer_identity_id, committer_time, committer_tz, committer_date,
 				subject)
 			VALUES (?, ?, ?,
-				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, \'unixepoch\'),
-				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, \'unixepoch\'),
-				?)', rows)!
+				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, 'unixepoch'),
+				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, 'unixepoch'),
+				?)",
+			rows)!
 	}
 
 	// Full snapshot replacement. Membership reflects the latest successful scan,
 	// and a deleted branch stops counting with no drift to reconcile.
 	if fresh {
-		d.conn.exec_param('DELETE FROM repository_commits WHERE repository_id = ?', repository_id.str())!
+		d.conn.exec_param('DELETE FROM repository_commits WHERE repository_id = ?',
+			repository_id.str())!
 	}
 	mut members := [][]string{cap: scan.commits.len}
 	for c in scan.commits {
@@ -309,7 +333,8 @@ fn (mut d DB) apply_snapshot(repository_id i64, scan gitrepo.Scan, fresh bool) !
 	}
 	if members.len > 0 {
 		d.conn.exec_param_many('INSERT OR IGNORE INTO repository_commits (repository_id, commit_id)
-			VALUES (?, (SELECT id FROM commits WHERE object_format = ? AND object_id = ?))', members)!
+			VALUES (?, (SELECT id FROM commits WHERE object_format = ? AND object_id = ?))',
+			members)!
 	}
 
 	d.conn.exec_param_many('UPDATE repositories SET object_format = ? WHERE id = ?', [

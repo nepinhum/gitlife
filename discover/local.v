@@ -41,7 +41,7 @@ fn walk(dir string, mut seen map[string]bool, mut found []Found) {
 	seen[dir] = true
 	if kind := repo_kind(dir) {
 		found << Found{
-			dir: dir
+			dir:  dir
 			name: os.file_name(dir)
 			bare: kind == 'bare'
 		}
@@ -66,7 +66,8 @@ fn repo_kind(dir string) ?string {
 	if os.exists(os.join_path(dir, '.git')) {
 		return 'worktree'
 	}
-	if os.exists(os.join_path(dir, 'HEAD')) && os.is_dir(os.join_path(dir, 'objects')) && os.is_dir(os.join_path(dir, 'refs')) {
+	if os.exists(os.join_path(dir, 'HEAD')) && os.is_dir(os.join_path(dir, 'objects'))
+		&& os.is_dir(os.join_path(dir, 'refs')) {
 		return 'bare'
 	}
 	return none

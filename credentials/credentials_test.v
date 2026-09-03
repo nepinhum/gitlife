@@ -46,7 +46,7 @@ fn test_an_exhausted_chain_names_what_it_tried() {
 // would otherwise end up in a log line or an error message.
 fn test_a_token_never_prints_its_value() {
 	token := Token{
-		value: 'ghp_supersecret'
+		value:  'ghp_supersecret'
 		source: 'GITLIFE_GITHUB_TOKEN'
 	}
 	assert '${token}' == 'Token(from GITLIFE_GITHUB_TOKEN)'

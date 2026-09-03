@@ -136,6 +136,7 @@ fn source_cmd(mut c config.Config, f Flags) !int {
 				'git' { source.redact_url(f.rest[2]) }
 				else { f.rest[2] }
 			}
+
 			if kind == 'local' && !os.is_dir(spec) {
 				return error('${f.rest[2]}: not a directory')
 			}
@@ -195,7 +196,7 @@ fn identity_cmd(mut c config.Config, f Flags) !int {
 				return error('usage: gitlife identity add --name <name> | --email <email>')
 			}
 			i := config.Identity{
-				name: f.name
+				name:  f.name
 				email: f.email
 			}
 			if c.identities.any(it.name == i.name && it.email == i.email) {
@@ -250,7 +251,7 @@ fn sync_cmd(c config.Config, paths config.Paths, f Flags) !int {
 	}
 	r := syncer.run(c, mut d, syncer.Options{
 		selector: selector
-		jobs: f.jobs
+		jobs:     f.jobs
 	})!
 	println(if f.format == 'json' { report.sync_json(r) } else { report.sync_table(r) })
 	// A failed source or repository makes the whole run nonzero, it lets a
@@ -298,21 +299,38 @@ fn report_cmd(command string, c config.Config, paths config.Paths, f Flags) !int
 	out := match command {
 		'repos' {
 			rows := d.repos(filter)!
-			if json { report.repos_json(rows) } else { report.repos_table(rows) }
+			if json {
+				report.repos_json(rows)
+			} else {
+				report.repos_table(rows)
+			}
 		}
 		'commits' {
 			rows := d.commits(filter, f.limit)!
-			if json { report.commits_json(rows) } else { report.commits_table(rows) }
+			if json {
+				report.commits_json(rows)
+			} else {
+				report.commits_table(rows)
+			}
 		}
 		'timeline' {
 			rows := d.timeline(filter, f.by)!
-			if json { report.timeline_json(rows) } else { report.timeline_table(rows) }
+			if json {
+				report.timeline_json(rows)
+			} else {
+				report.timeline_table(rows)
+			}
 		}
 		else {
 			s := d.summary(filter)!
-			if json { report.summary_json(s) } else { report.summary_table(s) }
+			if json {
+				report.summary_json(s)
+			} else {
+				report.summary_table(s)
+			}
 		}
 	}
+
 	println(out)
 	return 0
 }
@@ -342,10 +360,10 @@ fn narrow(c config.Config, mut d index.DB, f Flags) !index.Filter {
 		repo_ids = if repo_ids.len == 0 { ids.clone() } else { repo_ids.filter(it in ids) }
 	}
 	return index.Filter{
-		since: f.since
-		until: f.until
+		since:          f.since
+		until:          f.until
 		repository_ids: repo_ids
-		role: f.role
+		role:           f.role
 	}
 }
 

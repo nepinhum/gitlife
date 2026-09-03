@@ -38,8 +38,8 @@ fn origin(root string) string {
 fn cache_for(root string) Cache {
 	return Cache{
 		root: os.join_path(root, 'repos')
-		git: gitrepo.find() or { panic(err) }
-		exe: os.executable()
+		git:  gitrepo.find() or { panic(err) }
+		exe:  os.executable()
 	}
 }
 

@@ -15,7 +15,7 @@ fn fixture(name string) string {
 fn ok(name string) github.Response {
 	return github.Response{
 		status: 200
-		body: fixture(name)
+		body:   fixture(name)
 	}
 }
 
@@ -116,7 +116,7 @@ fn test_a_credential_failure_stops_before_any_paging() {
 	mut client, transport := scripted([
 		github.Response{
 			status: 401
-			body: fixture('bad_credentials.json')
+			body:   fixture('bad_credentials.json')
 		},
 	])
 	github_repos(mut client, 'nepinhum') or {

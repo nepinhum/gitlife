@@ -9,7 +9,7 @@ pub fn git_remote(url string) []Found {
 	return [
 		Found{
 			name: source.display_name(url)
-			url: url
+			url:  url
 		},
 	]
 }

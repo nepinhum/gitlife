@@ -81,7 +81,8 @@ pub fn github_repos(mut client github.Client, login string) !GithubResult {
 	is_user := collect_owner(mut client, login, mut repos)!
 
 	if viewer != '' && viewer.to_lower() == login.to_lower() {
-		collect_pages(mut client, viewer_repos_query, map[string]json2.Any{}, 'viewer.repositories', mut repos)!
+		collect_pages(mut client, viewer_repos_query, map[string]json2.Any{},
+			'viewer.repositories', mut repos)!
 	}
 
 	// contributionsCollection exists only for a User; an Organization has none.
@@ -92,8 +93,8 @@ pub fn github_repos(mut client github.Client, login string) !GithubResult {
 	mut found := repos.values()
 	found.sort(a.name < b.name)
 	return GithubResult{
-		found: found
-		viewer: viewer
+		found:     found
+		viewer:    viewer
 		remaining: client.rate.remaining
 	}
 }
@@ -110,13 +111,13 @@ fn collect_owner(mut client github.Client, login string, mut repos map[string]Fo
 		})!
 		owner := dig(data, 'repositoryOwner') or {
 			return github.Failure{
-				kind: .not_found
+				kind:    .not_found
 				message: "GitHub has no account named '${login}', or this token cannot see it"
 			}
 		}
 		if owner.as_map().len == 0 {
 			return github.Failure{
-				kind: .not_found
+				kind:    .not_found
 				message: "GitHub has no account named '${login}', or this token cannot see it"
 			}
 		}
@@ -195,8 +196,8 @@ fn remember(node json2.Any, mut repos map[string]Found) {
 		'isArchived':    fields['isArchived'] or { json2.Any(false) }
 	}).json_str()
 	repos[key] = Found{
-		name: if name != '' { name } else { source.display_name(url) }
-		url: url
+		name:     if name != '' { name } else { source.display_name(url) }
+		url:      url
 		metadata: metadata
 	}
 }

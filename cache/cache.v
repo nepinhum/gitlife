@@ -31,16 +31,16 @@ pub fn (c Cache) ensure(url string, env map[string]string) !Entry {
 	if os.exists(os.join_path(dir, 'HEAD')) {
 		c.fetch(dir, env)!
 		return Entry{
-			dir: dir
-			cloned: false
+			dir:      dir
+			cloned:   false
 			filtered: c.is_filtered(dir)
 		}
 	}
 	os.mkdir_all(os.dir(dir))!
 	filtered := c.clone(url, dir, env)!
 	return Entry{
-		dir: dir
-		cloned: true
+		dir:      dir
+		cloned:   true
 		filtered: filtered
 	}
 }
@@ -95,7 +95,8 @@ fn (c Cache) args(rest []string) []string {
 }
 
 fn (c Cache) is_filtered(dir string) bool {
-	result := c.git.at_with(dir, ['config', '--get', 'remote.origin.partialclonefilter'], map[string]string{}) or { return false }
+	result := c.git.at_with(dir, ['config', '--get', 'remote.origin.partialclonefilter'],
+		map[string]string{}) or { return false }
 	return result.stdout.trim_space() != ''
 }
 
@@ -107,11 +108,8 @@ fn sanitize(part string) string {
 	}
 	mut out := []u8{cap: part.len}
 	for ch in part {
-		if (ch >= `a` && ch <= `z`) || (ch >= `A` && ch <= `Z`) || (ch >= `0` && ch <= `9`) || ch in [
-			`.`,
-			`_`,
-			`-`,
-		] {
+		if (ch >= `a` && ch <= `z`) || (ch >= `A` && ch <= `Z`)
+			|| (ch >= `0` && ch <= `9`) || ch in [`.`, `_`, `-`] {
 			out << ch
 		} else {
 			out << `_`

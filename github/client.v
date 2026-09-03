@@ -19,13 +19,13 @@ mut:
 // remedies. Collapsing them into one "GitHub error" would tell a user to check
 // their token when the real problem was a rate limit.
 pub enum FailureKind {
-	missing_credentials // no token anywhere in the chain
-	invalid_credentials // GitHub rejected the token
+	missing_credentials      // no token anywhere in the chain
+	invalid_credentials      // GitHub rejected the token
 	insufficient_permissions // the token is valid but not allowed to see this
-	not_found // no such account or one this token cannot see
-	rate_limited // too many requests, primary or secondary
-	network // GitHub was unreachable or answered 5xx
-	malformed // GitHub answered something we cannot read
+	not_found                // no such account or one this token cannot see
+	rate_limited             // too many requests, primary or secondary
+	network                  // GitHub was unreachable or answered 5xx
+	malformed                // GitHub answered something we cannot read
 }
 
 pub struct Failure {
@@ -56,8 +56,8 @@ pub mut:
 	max_retries int = 3
 	// A secondary rate limit is measured in seconds and is worth waiting out. A
 	// primary one can be an hour away and is never slept on.
-	max_wait int = 60
-	sleeper  fn(int) = default_sleep
+	max_wait int      = 60
+	sleeper  fn (int) = default_sleep
 	rate     RateLimit
 	requests int
 	// waits records every throttle this client sat through, in seconds. A sync can
@@ -83,11 +83,11 @@ pub fn (mut c Client) query(operation string, variables map[string]json2.Any) !j
 	}
 	body := json2.Any(envelope_out).json_str()
 
-	for attempt := 0; ; attempt++ {
+	for attempt := 0; true; attempt++ {
 		c.requests++
 		response := c.transport.post(body) or {
 			return Failure{
-				kind: .network
+				kind:    .network
 				message: 'could not reach GitHub: ${err.msg()}'
 			}
 		}
@@ -106,7 +106,7 @@ pub fn (mut c Client) query(operation string, variables map[string]json2.Any) !j
 		return data
 	}
 	return Failure{
-		kind: .rate_limited
+		kind:    .rate_limited
 		message: 'gave up after ${c.max_retries} retries'
 	}
 }
@@ -116,7 +116,7 @@ fn (mut c Client) interpret(response Response) !json2.Any {
 	match true {
 		response.status == 401 {
 			return Failure{
-				kind: .invalid_credentials
+				kind:    .invalid_credentials
 				message: 'GitHub rejected the token (HTTP 401: ${excerpt(response.body)})'
 			}
 		}
@@ -125,13 +125,13 @@ fn (mut c Client) interpret(response Response) !json2.Any {
 		}
 		response.status >= 500 {
 			return Failure{
-				kind: .network
+				kind:    .network
 				message: 'GitHub returned HTTP ${response.status}'
 			}
 		}
 		response.status != 200 {
 			return Failure{
-				kind: .malformed
+				kind:    .malformed
 				message: 'GitHub returned an unexpected HTTP ${response.status}: ${excerpt(response.body)}'
 			}
 		}
@@ -140,14 +140,14 @@ fn (mut c Client) interpret(response Response) !json2.Any {
 
 	decoded := json2.decode[json2.Any](response.body) or {
 		return Failure{
-			kind: .malformed
+			kind:    .malformed
 			message: 'GitHub returned a body that is not JSON: ${excerpt(response.body)}'
 		}
 	}
 	envelope := decoded.as_map()
 	if envelope.len == 0 {
 		return Failure{
-			kind: .malformed
+			kind:    .malformed
 			message: 'GitHub returned a JSON body that is not an object: ${excerpt(response.body)}'
 		}
 	}
@@ -160,13 +160,13 @@ fn (mut c Client) interpret(response Response) !json2.Any {
 	}
 	data := envelope['data'] or {
 		return Failure{
-			kind: .malformed
+			kind:    .malformed
 			message: "GitHub returned neither 'data' nor 'errors': ${excerpt(response.body)}"
 		}
 	}
 	if data.as_map().len == 0 {
 		return Failure{
-			kind: .malformed
+			kind:    .malformed
 			message: "GitHub returned an empty 'data': ${excerpt(response.body)}"
 		}
 	}
@@ -180,28 +180,28 @@ fn (mut c Client) forbidden_or_limited(response Response) !json2.Any {
 	retry_after := (response.headers['retry-after'] or { '' }).int()
 	if retry_after > 0 {
 		return Failure{
-			kind: .rate_limited
-			message: 'GitHub asked us to wait ${retry_after}s (secondary rate limit)'
+			kind:        .rate_limited
+			message:     'GitHub asked us to wait ${retry_after}s (secondary rate limit)'
 			retry_after: retry_after
 		}
 	}
 	if (response.headers['x-ratelimit-remaining'] or { '' }) == '0' {
 		reset := (response.headers['x-ratelimit-reset'] or { '' }).i64()
 		return Failure{
-			kind: .rate_limited
-			message: 'GitHub rate limit is exhausted; it resets at ${stamp(reset)}'
+			kind:     .rate_limited
+			message:  'GitHub rate limit is exhausted; it resets at ${stamp(reset)}'
 			reset_at: reset
 		}
 	}
 	if response.body.to_lower().contains('secondary rate limit') {
 		return Failure{
-			kind: .rate_limited
-			message: 'GitHub applied a secondary rate limit'
+			kind:        .rate_limited
+			message:     'GitHub applied a secondary rate limit'
 			retry_after: 30
 		}
 	}
 	return Failure{
-		kind: .insufficient_permissions
+		kind:    .insufficient_permissions
 		message: 'the token is not allowed to read this (HTTP ${response.status}: ${excerpt(response.body)})'
 	}
 }
@@ -217,14 +217,14 @@ fn (mut c Client) graphql_failure(errors []json2.Any) !json2.Any {
 	detail := messages.filter(it != '').join('; ')
 	if 'RATE_LIMITED' in types {
 		return Failure{
-			kind: .rate_limited
-			message: 'GitHub rate limit is exhausted; it resets at ${stamp(c.rate.reset_at)}'
+			kind:     .rate_limited
+			message:  'GitHub rate limit is exhausted; it resets at ${stamp(c.rate.reset_at)}'
 			reset_at: c.rate.reset_at
 		}
 	}
 	if 'FORBIDDEN' in types {
 		return Failure{
-			kind: .insufficient_permissions
+			kind:    .insufficient_permissions
 			message: 'the token is not allowed to read this: ${detail}'
 		}
 	}
@@ -233,12 +233,12 @@ fn (mut c Client) graphql_failure(errors []json2.Any) !json2.Any {
 		// one this token may not see. It does not distinguish them and neither
 		// can we. Naming both is more useful than picking one.
 		return Failure{
-			kind: .not_found
+			kind:    .not_found
 			message: 'GitHub found nothing under that name. It does not exist, or this token cannot see it: ${detail}'
 		}
 	}
 	return Failure{
-		kind: .malformed
+		kind:    .malformed
 		message: 'GitHub rejected the query: ${detail}'
 	}
 }

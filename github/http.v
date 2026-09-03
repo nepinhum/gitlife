@@ -11,7 +11,7 @@ pub:
 	endpoint   string = 'https://api.github.com/graphql'
 	token      string
 	user_agent string = 'gitlife'
-	timeout    i64 = 30 * time.second
+	timeout    i64    = 30 * time.second
 }
 
 // interesting names the response headers gitlife acts on. Only these are copied,
@@ -24,11 +24,11 @@ pub fn (mut t HttpTransport) post(body string) !Response {
 	header.add_custom('Authorization', 'Bearer ${t.token}')!
 	header.add_custom('Content-Type', 'application/json')!
 	response := http.fetch(http.FetchConfig{
-		url: t.endpoint
-		method: .post
-		header: header
-		data: body
-		user_agent: t.user_agent
+		url:          t.endpoint
+		method:       .post
+		header:       header
+		data:         body
+		user_agent:   t.user_agent
 		read_timeout: t.timeout
 	})!
 	mut headers := map[string]string{}
@@ -38,8 +38,8 @@ pub fn (mut t HttpTransport) post(body string) !Response {
 		}
 	}
 	return Response{
-		status: response.status_code
-		body: response.body
+		status:  response.status_code
+		body:    response.body
 		headers: headers
 	}
 }

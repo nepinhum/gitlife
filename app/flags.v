@@ -12,7 +12,7 @@ mut:
 	role    string = 'author'
 	name    string
 	email   string
-	limit   int = 50
+	limit   int    = 50
 	by      string = 'month'
 	jobs    int
 	dry_run bool

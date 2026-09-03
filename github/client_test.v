@@ -12,7 +12,7 @@ fn fixture(name string) string {
 fn ok(body string) Response {
 	return Response{
 		status: 200
-		body: body
+		body:   body
 	}
 }
 
@@ -41,10 +41,12 @@ fn kind_of(mut c Client) FailureKind {
 }
 
 fn test_a_rejected_token_is_invalid_credentials() {
-	mut c := client_for([Response{
-		status: 401
-		body: fixture('bad_credentials.json')
-	}])
+	mut c := client_for([
+		Response{
+			status: 401
+			body:   fixture('bad_credentials.json')
+		},
+	])
 	assert kind_of(mut c) == .invalid_credentials
 }
 
@@ -55,10 +57,12 @@ fn test_a_forbidden_field_is_insufficient_permissions() {
 
 // A 403 that carries no rate limit signal is a permission problem, not a limit.
 fn test_a_bare_403_is_insufficient_permissions() {
-	mut c := client_for([Response{
-		status: 403
-		body: '{"message":"Resource not accessible by integration"}'
-	}])
+	mut c := client_for([
+		Response{
+			status: 403
+			body:   '{"message":"Resource not accessible by integration"}'
+		},
+	])
 	assert kind_of(mut c) == .insufficient_permissions
 }
 
@@ -85,7 +89,7 @@ fn test_neither_data_nor_errors_is_malformed() {
 fn test_a_5xx_is_a_network_failure() {
 	mut c := client_for([Response{
 		status: 502
-		body: fixture('malformed.html')
+		body:   fixture('malformed.html')
 	}])
 	assert kind_of(mut c) == .network
 }
@@ -98,14 +102,16 @@ fn test_a_transport_that_cannot_connect_is_a_network_failure() {
 // A primary rate limit can be an hour away. Sleeping through it inside a sync
 // would be worse than failing, so it fails and says when the budget returns.
 fn test_a_primary_rate_limit_fails_without_sleeping() {
-	mut c := client_for([Response{
-		status: 403
-		body: '{"message":"API rate limit exceeded"}'
-		headers: {
-			'x-ratelimit-remaining': '0'
-			'x-ratelimit-reset':     '1900000000'
-		}
-	}])
+	mut c := client_for([
+		Response{
+			status:  403
+			body:    '{"message":"API rate limit exceeded"}'
+			headers: {
+				'x-ratelimit-remaining': '0'
+				'x-ratelimit-reset':     '1900000000'
+			}
+		},
+	])
 	c.sleeper = never_sleep
 	ask(mut c) or {
 		if err is Failure {
@@ -129,8 +135,8 @@ fn test_a_graphql_rate_limit_error_is_rate_limited() {
 fn test_a_secondary_rate_limit_is_retried() {
 	mut c := client_for([
 		Response{
-			status: 403
-			body: fixture('secondary_rate_limit.json')
+			status:  403
+			body:    fixture('secondary_rate_limit.json')
 			headers: {
 				'retry-after': '2'
 			}
@@ -148,8 +154,8 @@ fn test_a_delay_is_capped_and_the_client_eventually_gives_up() {
 	mut script := []Response{}
 	for _ in 0 .. 6 {
 		script << Response{
-			status: 429
-			body: fixture('secondary_rate_limit.json')
+			status:  429
+			body:    fixture('secondary_rate_limit.json')
 			headers: {
 				'retry-after': '3600'
 			}

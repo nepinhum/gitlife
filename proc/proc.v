@@ -87,8 +87,8 @@ pub fn run(cmd Cmd) !Result {
 	p.close()
 	return Result{
 		exit_code: code
-		stdout: out.join('')
-		stderr: truncate(errs.join(''))
+		stdout:    out.join('')
+		stderr:    truncate(errs.join(''))
 	}
 }
 

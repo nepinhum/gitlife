@@ -53,7 +53,8 @@ pub fn local_path(raw string) ?string {
 	if address.contains('://') {
 		return none
 	}
-	if address.starts_with('/') || address.starts_with('./') || address.starts_with('../') || address.starts_with('~/') {
+	if address.starts_with('/') || address.starts_with('./') || address.starts_with('../')
+		|| address.starts_with('~/') {
 		return address
 	}
 	// Anything else is a remote: 'host:path', 'user@host:path', a bare name.

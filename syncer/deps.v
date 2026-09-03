@@ -10,8 +10,8 @@ import github
 
 pub struct Deps {
 pub:
-	token  fn() !credentials.Token = live_token
-	github fn(credentials.Token) !&github.Client = live_github
+	token  fn () !credentials.Token               = live_token
+	github fn (credentials.Token) !&github.Client = live_github
 }
 
 // live_token walks the GitHub credential chain: environment first, 'gh' last and

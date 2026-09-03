@@ -37,7 +37,7 @@ pub fn (e EnvVar) token() ?Token {
 		return none
 	}
 	return Token{
-		value: value
+		value:  value
 		source: e.variable
 	}
 }
@@ -56,7 +56,7 @@ pub fn (g GhCli) token() ?Token {
 	// proc.run, not proc.check: gh prints the token on stdout and an error built
 	// from a failed run must never be able to carry it.
 	result := proc.run(proc.Cmd{
-		exe: exe
+		exe:  exe
 		args: ['auth', 'token']
 	}) or { return none }
 	if result.exit_code != 0 {
@@ -67,7 +67,7 @@ pub fn (g GhCli) token() ?Token {
 		return none
 	}
 	return Token{
-		value: value
+		value:  value
 		source: 'gh auth token'
 	}
 }

@@ -44,13 +44,13 @@ pub fn (mut d DB) repos(f Filter) ![]Repo {
 	params << committed_params
 	rows := d.conn.exec_param_many(q, params)!
 	return rows.map(Repo{
-		id: it.val(0).i64()
-		name: it.val(1)
-		authored: it.val(2).int()
+		id:        it.val(0).i64()
+		name:      it.val(1)
+		authored:  it.val(2).int()
 		committed: it.val(3).int()
-		first: it.val(4)
-		latest: it.val(5)
-		location: it.val(6)
+		first:     it.val(4)
+		latest:    it.val(5)
+		location:  it.val(6)
 	})
 }
 
@@ -58,13 +58,14 @@ pub fn (mut d DB) repos(f Filter) ![]Repo {
 // is the one report whose natural size is a lifetime of work.
 pub fn (mut d DB) commits(f Filter, limit int) ![]CommitRow {
 	sel, params := f.mine(f.which())
-	q := with(sel, "SELECT m.object_id, m.d, m.subject,\n\t\tCOALESCE((SELECT r.display_name FROM repository_commits rc\n\t\t\tJOIN repositories r ON r.id = rc.repository_id\n\t\t\tWHERE rc.commit_id = m.id ORDER BY r.display_name LIMIT 1), ''),\n\t\t(SELECT COUNT(*) FROM repository_commits rc WHERE rc.commit_id = m.id)\n\t\tFROM mine m GROUP BY m.id\n\t\tORDER BY m.t DESC, m.object_id ASC LIMIT ${limit}")
+	q := with(sel,
+		"SELECT m.object_id, m.d, m.subject,\n\t\tCOALESCE((SELECT r.display_name FROM repository_commits rc\n\t\t\tJOIN repositories r ON r.id = rc.repository_id\n\t\t\tWHERE rc.commit_id = m.id ORDER BY r.display_name LIMIT 1), ''),\n\t\t(SELECT COUNT(*) FROM repository_commits rc WHERE rc.commit_id = m.id)\n\t\tFROM mine m GROUP BY m.id\n\t\tORDER BY m.t DESC, m.object_id ASC LIMIT ${limit}")
 	rows := d.conn.exec_param_many(q, params)!
 	return rows.map(CommitRow{
-		object_id: it.val(0)
-		date: it.val(1)
-		subject: it.val(2)
-		repository: it.val(3)
+		object_id:    it.val(0)
+		date:         it.val(1)
+		subject:      it.val(2)
+		repository:   it.val(3)
 		repositories: it.val(4).int()
 	})
 }
@@ -79,6 +80,7 @@ pub fn (mut d DB) timeline(f Filter, by string) ![]Count {
 		'day' { 'd' }
 		else { 'substr(d, 1, 7)' }
 	}
+
 	q := with(sel, 'SELECT ${expr}, COUNT(DISTINCT id) FROM mine GROUP BY 1 ORDER BY 1')
 	return fill(d.counts(q, params)!, by)
 }

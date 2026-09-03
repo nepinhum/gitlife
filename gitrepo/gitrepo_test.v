@@ -8,7 +8,8 @@ fn test_parse_tz() {
 }
 
 fn test_parse_commits_reads_every_field() {
-	out := 'abc123\ndef456 789abc\nAda\nada@example.com\n1700000000\n+0200\n' + 'Bob\nbob@example.com\n1700000060\n-0500\nSubject line\n'
+	out := 'abc123\ndef456 789abc\nAda\nada@example.com\n1700000000\n+0200\n' +
+		'Bob\nbob@example.com\n1700000060\n-0500\nSubject line\n'
 	commits := parse_commits(out)!
 	assert commits.len == 1
 	c := commits[0]
@@ -27,7 +28,8 @@ fn test_parse_commits_reads_every_field() {
 // A root commit has no parents and a subject may be empty, so the record must
 // still be exactly eleven lines. Fixed arity is the whole reason this parses.
 fn test_parse_commits_handles_empty_fields() {
-	out := 'aaa\n\nAda\nada@example.com\n1\n+0000\nAda\nada@example.com\n1\n+0000\n\n' + 'bbb\naaa\nAda\nada@example.com\n2\n+0000\nAda\nada@example.com\n2\n+0000\nsecond\n'
+	out := 'aaa\n\nAda\nada@example.com\n1\n+0000\nAda\nada@example.com\n1\n+0000\n\n' +
+		'bbb\naaa\nAda\nada@example.com\n2\n+0000\nAda\nada@example.com\n2\n+0000\nsecond\n'
 	commits := parse_commits(out)!
 	assert commits.len == 2
 	assert commits[0].parents == ''

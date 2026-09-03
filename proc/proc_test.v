@@ -36,9 +36,9 @@ fn test_an_addition_overrides_an_inherited_value() {
 fn test_the_environment_reaches_the_child() {
 	os.setenv('GITLIFE_PROC_TEST_SCRUBBED', 'should-not-survive', true)
 	result := run(Cmd{
-		exe: find('sh')!
+		exe:  find('sh')!
 		args: ['-c', r'echo "[${GITLIFE_PROC_TEST_SCRUBBED-unset}][${GITLIFE_PROC_TEST_ADDED-unset}]"']
-		env: child_env(['GITLIFE_PROC_TEST_SCRUBBED'], {
+		env:  child_env(['GITLIFE_PROC_TEST_SCRUBBED'], {
 			'GITLIFE_PROC_TEST_ADDED': 'arrived'
 		})
 	})!
@@ -48,7 +48,7 @@ fn test_the_environment_reaches_the_child() {
 
 fn test_stdout_and_stderr_stay_apart() {
 	result := run(Cmd{
-		exe: find('sh')!
+		exe:  find('sh')!
 		args: ['-c', 'echo out; echo err 1>&2; exit 3']
 	})!
 	assert result.exit_code == 3
@@ -61,7 +61,7 @@ fn test_stdout_and_stderr_stay_apart() {
 // 64KiB pipe buffer, never exits, and stdout never ends.
 fn test_a_child_that_floods_stderr_neither_hangs_nor_is_kept_whole() {
 	result := run(Cmd{
-		exe: find('sh')!
+		exe:  find('sh')!
 		args: ['-c', 'yes xxxxxxxxxx | head -c 100000 1>&2']
 	})!
 	assert result.stderr.len < max_stderr + 100
@@ -70,7 +70,7 @@ fn test_a_child_that_floods_stderr_neither_hangs_nor_is_kept_whole() {
 // The same hazard from the other side, and both at once.
 fn test_a_child_that_floods_both_pipes_completes() {
 	result := run(Cmd{
-		exe: find('sh')!
+		exe:  find('sh')!
 		args: ['-c', 'yes aaaaaaaaaa | head -c 200000; yes bbbbbbbbbb | head -c 200000 1>&2']
 	})!
 	assert result.exit_code == 0
