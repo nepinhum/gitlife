@@ -55,6 +55,12 @@ fn (mut d DB) migrate() ! {
 				return err
 			}
 		}
+		if v + 1 == 3 {
+			d.fold_transport_keys() or {
+				d.conn.rollback() or {}
+				return err
+			}
+		}
 	}
 	d.conn.exec('PRAGMA user_version = ${schema_version}') or {
 		d.conn.rollback() or {}
@@ -98,8 +104,7 @@ pub fn (mut d DB) deactivate_sources_except(ids []string) ! {
 pub fn (mut d DB) resolve_repository(locations []Location, name string, object_format string, now i64) !i64 {
 	mut owners := []i64{}
 	for location in locations {
-		rows := d.conn.exec_param('SELECT repository_id FROM repository_locations WHERE key = ?',
-			location.key)!
+		rows := d.conn.exec_param('SELECT repository_id FROM repository_locations WHERE key = ?', location.key)!
 		if rows.len == 0 {
 			continue
 		}
@@ -159,6 +164,50 @@ fn (mut d DB) merge_repositories(keep i64, absorbed i64) ! {
 	d.conn.exec('DELETE FROM repositories WHERE id = ${absorbed}')!
 }
 
+// fold_transport_keys is the v3 migration. A remote key used to carry the
+// transport, so one repository reached over ssh and over https was two rows,
+// two repositories and two histories. Rows whose keys fold onto each other are
+// merged into the oldest of them.
+//
+// Every remaining remote row loses its digest and is walked again on the next
+// sync. A repository that just absorbed another has a different set of commits
+// than the digest was taken for and one rescan is the safe direction to be
+// wrong in.
+fn (mut d DB) fold_transport_keys() ! {
+	rows := d.conn.exec("SELECT id, key FROM repository_locations
+		WHERE kind = 'remote' ORDER BY id")!
+	mut keeper := map[string]i64{}
+	for row in rows {
+		id := row.val(0).i64()
+		folded := source.fold_transport(row.val(1))
+		if folded !in keeper {
+			keeper[folded] = id
+			continue
+		}
+		// Read both repositories now rather than trusting what they were at the
+		// top of the loop: an earlier merge may have moved either of them.
+		keep := d.repository_of_location(keeper[folded])!
+		absorbed := d.repository_of_location(id)!
+		if keep != 0 && absorbed != 0 && keep != absorbed {
+			d.merge_repositories(keep, absorbed)!
+		}
+		d.conn.exec('DELETE FROM repository_locations WHERE id = ${id}')!
+	}
+	for folded, id in keeper {
+		d.conn.exec_param_many("UPDATE repository_locations SET key = ?, refs_digest = ''\n\t\t\tWHERE id = ${id}", [
+			folded,
+		])!
+	}
+}
+
+fn (mut d DB) repository_of_location(id i64) !i64 {
+	rows := d.conn.exec('SELECT repository_id FROM repository_locations WHERE id = ${id}')!
+	if rows.len == 0 {
+		return 0
+	}
+	return rows[0].val(0).i64()
+}
+
 // location_digest is the fingerprint of the refs seen the last time this location
 // was scanned successfully.
 pub fn (mut d DB) location_digest(key string) !string {
@@ -183,13 +232,11 @@ pub fn (mut d DB) replace_remotes(repository_id i64, remotes map[string]string) 
 	d.conn.exec_param('DELETE FROM repository_remotes WHERE repository_id = ?', repository_id.str())!
 	mut rows := [][]string{}
 	for remote_name, url in remotes {
-		rows << [repository_id.str(), remote_name, source.redact_url(url),
-			source.normalize_url(url)]
+		rows << [repository_id.str(), remote_name, source.redact_url(url), source.normalize_url(url)]
 	}
 	if rows.len > 0 {
 		d.conn.exec_param_many('INSERT OR IGNORE INTO repository_remotes (repository_id, name, url, url_norm)
-			VALUES (?, ?, ?, ?)',
-			rows)!
+			VALUES (?, ?, ?, ?)', rows)!
 	}
 }
 
@@ -252,8 +299,7 @@ fn (mut d DB) apply_accepted(names []string, emails []string) ! {
 	}
 	if rows.len > 0 {
 		d.conn.exec_param_many('INSERT OR IGNORE INTO accepted_identities (kind, value, value_norm)
-			VALUES (?, ?, ?)',
-			rows)!
+			VALUES (?, ?, ?)', rows)!
 	}
 }
 
@@ -285,8 +331,7 @@ fn (mut d DB) apply_snapshot(repository_id i64, scan gitrepo.Scan, fresh bool) !
 	}
 	if idents.len > 0 {
 		d.conn.exec_param_many('INSERT OR IGNORE INTO git_identities (name, email, email_norm)
-			VALUES (?, ?, ?)',
-			idents)!
+			VALUES (?, ?, ?)', idents)!
 	}
 
 	mut rows := [][]string{cap: scan.commits.len}
@@ -317,15 +362,13 @@ fn (mut d DB) apply_snapshot(repository_id i64, scan gitrepo.Scan, fresh bool) !
 			VALUES (?, ?, ?,
 				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, 'unixepoch'),
 				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, 'unixepoch'),
-				?)",
-			rows)!
+				?)", rows)!
 	}
 
 	// Full snapshot replacement. Membership reflects the latest successful scan,
 	// and a deleted branch stops counting with no drift to reconcile.
 	if fresh {
-		d.conn.exec_param('DELETE FROM repository_commits WHERE repository_id = ?',
-			repository_id.str())!
+		d.conn.exec_param('DELETE FROM repository_commits WHERE repository_id = ?', repository_id.str())!
 	}
 	mut members := [][]string{cap: scan.commits.len}
 	for c in scan.commits {
@@ -333,8 +376,7 @@ fn (mut d DB) apply_snapshot(repository_id i64, scan gitrepo.Scan, fresh bool) !
 	}
 	if members.len > 0 {
 		d.conn.exec_param_many('INSERT OR IGNORE INTO repository_commits (repository_id, commit_id)
-			VALUES (?, (SELECT id FROM commits WHERE object_format = ? AND object_id = ?))',
-			members)!
+			VALUES (?, (SELECT id FROM commits WHERE object_format = ? AND object_id = ?))', members)!
 	}
 
 	d.conn.exec_param_many('UPDATE repositories SET object_format = ? WHERE id = ?', [
