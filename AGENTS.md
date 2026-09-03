@@ -73,11 +73,14 @@ its own or it is unverified:
 v -old-compiler -shared -check <module>/
 ```
 
-Requires `git` on PATH and SQLite.
+Requires `git` on PATH and SQLite. Linux and macOS: process spawning is
+`posix_spawn` and the directories are XDG, so Windows does not build (for now).
 
 ## Invariants
 
 - `proc` is the only place that starts a process, and never through a shell.
+  It spawns with `posix_spawn` rather than `os.new_process` which forks and then
+  runs V code in the child. From a thread that deadlocks.
 - A token is never embedded in a stored remote URL, never written to SQLite,
   never printed through git's stderr. Transport goes through
   `gitlife credential-helper get`, which git invokes on demand.

@@ -4,6 +4,9 @@
 v -prod -o gitlife .
 ```
 
+Linux and macOS. Windows is not supported: gitlife starts processes and lays out
+its directories the POSIX way and no works has done to change that.
+
 Requires `git` on PATH and SQLite (Arch: `pacman -S sqlite`, Debian:
 `apt install libsqlite3-dev`). Add `-old-compiler` if your V miscompiles this.
 
