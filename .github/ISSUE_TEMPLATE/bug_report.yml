@@ -1,0 +1,64 @@
+name: Bug report
+description: Something gitlife did wrong
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        gitlife handles access tokens. Before you paste a command, an error or a
+        log, read it once and remove anything private: tokens, private
+        repository names, absolute paths you would rather not publish.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `gitlife version`.
+      placeholder: gitlife 0.1.0 (abc1234)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Which kind of source
+      options:
+        - local
+        - a direct Git remote
+        - GitHub discovery
+        - none of them or not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran and what came back.
+      placeholder: |
+        $ gitlife sync --jobs 4
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: >-
+        OS, V version, git version, and how you built gitlife. gitlife is built
+        against the stable V release, 0.5.2. If you are on V master, say so:
+        master breaks often and `v fmt` there in particular.
+      placeholder: |
+        Arch Linux
+        v 0.5.2, built with -old-compiler -prod
+        git 2.51.0
+    validations:
+      required: true

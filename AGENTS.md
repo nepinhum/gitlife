@@ -38,6 +38,9 @@ LSP reads it; a comment above `module x` is invisible to both.
 
 Every V invocation passes `-old-compiler`. V3 is broken on linux-gnu.
 
+Build with the stable V release, 0.5.2. On V master `v fmt` is frequently broken
+and rewrites code that was fine, so never trust a master formatter's diff.
+
 ```sh
 v fmt -w .
 v -old-compiler -o gitlife .          # development
@@ -61,7 +64,7 @@ a smaller binary than gcc here. gcc past 12.0 has inlining bugs under `-prod`,
 worked around with `-cflags -fno-inline-small-functions` if a build breaks.
 
 `v fmt` before compiling, always and compile after `v fmt`: it silently breaks
-code around a few keywords.
+code around a few keywords and more of them on V master than on 0.5.2.
 
 A module nothing imports yet is **not** reached by the binary build. Check it on
 its own or it is unverified:

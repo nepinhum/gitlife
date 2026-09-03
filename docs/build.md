@@ -7,6 +7,11 @@ v -prod -o gitlife .
 Requires `git` on PATH and SQLite (Arch: `pacman -S sqlite`, Debian:
 `apt install libsqlite3-dev`). Add `-old-compiler` if your V miscompiles this.
 
+Use the stable V release, 0.5.2. V master moves fast and `v fmt` there is
+frequently broken, badly enough to rewrite working code into something that no
+longer compiles. A master build may still work; the formatter is the part to
+distrust.
+
 `-prod` turns on the C optimizer and link time optimization. It also promotes
 most V warnings to errors, so a tree that builds clean without it can still fail
 with it. Drop `-prod` while developing:

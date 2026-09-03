@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/nepinhum/gitlife/tree/master/docs
+    about: Building, usage, GitHub tokens, what the numbers mean, where things are stored.

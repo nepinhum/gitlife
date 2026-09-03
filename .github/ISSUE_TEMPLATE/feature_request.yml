@@ -1,0 +1,27 @@
+name: Feature request
+description: Something gitlife should be able to do
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The work you want out of gitlife, not the implementation yet.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+      description: A command, a flag, a report column, a discovery provider.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today instead
+      description: Skip it if there is nothing.
+    validations:
+      required: false
