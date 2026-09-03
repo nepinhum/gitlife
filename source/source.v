@@ -40,7 +40,11 @@ pub fn location_key(raw string) string {
 	if path := local_path(raw) {
 		return 'dir:' + os.real_path(path)
 	}
-	return 'url:' + normalize_url(raw)
+	normalized := normalize_url(raw)
+	if at := normalized.index('://') {
+		return 'url:' + normalized[at + 3..]
+	}
+	return 'url:' + normalized
 }
 
 // local_path recognizes the addresses that name a directory on this machine
@@ -53,12 +57,23 @@ pub fn local_path(raw string) ?string {
 	if address.contains('://') {
 		return none
 	}
-	if address.starts_with('/') || address.starts_with('./') || address.starts_with('../')
-		|| address.starts_with('~/') {
+	if address.starts_with('/') || address.starts_with('./') || address.starts_with('../') || address.starts_with('~/') {
 		return address
 	}
 	// Anything else is a remote: 'host:path', 'user@host:path', a bare name.
 	return none
+}
+
+// fold_transport rewrites a location key that was stored before the transport
+// was dropped from one. Only the v3 migration in index has any use for it.
+pub fn fold_transport(key string) string {
+	if !key.starts_with('url:') {
+		return key
+	}
+	if at := key.index('://') {
+		return 'url:' + key[at + 3..]
+	}
+	return key
 }
 
 pub fn redact_url(raw string) string {

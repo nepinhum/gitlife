@@ -2,7 +2,7 @@ module index
 
 // schema_version is bumped whenever a migration is appended. A database written
 // by a newer gitlife is refused rather than guessed at.
-const schema_version = 2
+const schema_version = 3
 
 // migrations[v - 1] holds the statements that take the schema to version v.
 // Statements are listed one per entry because SQLite prepares a single statement
@@ -10,6 +10,7 @@ const schema_version = 2
 const migrations = [
 	v1,
 	v2,
+	v3,
 ]
 
 const v1 = [
@@ -107,3 +108,10 @@ const v2 = [
 	"ALTER TABLE repository_locations ADD COLUMN refs_digest TEXT NOT NULL DEFAULT ''",
 	'ALTER TABLE repositories DROP COLUMN refs_digest',
 ]
+
+// v3 drops the transport from a remote location key which used to keep
+// 'ssh://host/you/repo' and 'https://host/you/repo' apart as two repositories.
+// It has no statements: keys collide once they fold and the rows that collide
+// can belong to two repository rows that have to be merged first. That work is
+// fold_transport_keys in index.v.
+const v3 = []string{}

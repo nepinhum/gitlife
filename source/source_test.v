@@ -39,7 +39,12 @@ fn test_a_fork_and_its_upstream_do_not_collapse() {
 }
 
 fn test_the_key_is_namespaced() {
-	assert location_key('https://github.com/a/b') == 'url:https://github.com/a/b'
+	assert location_key('https://github.com/a/b') == 'url:github.com/a/b'
+}
+
+fn test_ssh_and_https_spellings_share_a_key() {
+	assert location_key('git@github.com:nepinhum/gitlife.git') == location_key('https://github.com/nepinhum/gitlife')
+	assert location_key('ssh://git@github.com/a/b') == location_key('https://github.com/a/b')
 }
 
 fn test_display_name_is_owner_and_repository() {
