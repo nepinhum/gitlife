@@ -52,10 +52,10 @@ fn (g Git) at(dir string, args []string) !proc.Result {
 // credential travels through.
 pub fn (g Git) at_with(dir string, args []string, extra map[string]string) !proc.Result {
 	return proc.check(proc.Cmd{
-		exe:  g.exe
+		exe: g.exe
 		args: args
-		cwd:  dir
-		env:  git_env(extra)
+		cwd: dir
+		env: git_env(extra)
 	})
 }
 
@@ -78,10 +78,10 @@ pub fn (g Git) refs_digest(dir string) !string {
 	lines.sort()
 	// An empty repository has no HEAD to resolve; that is not a failure.
 	head := proc.run(proc.Cmd{
-		exe:  g.exe
+		exe: g.exe
 		args: ['rev-parse', '--verify', '--quiet', 'HEAD']
-		cwd:  dir
-		env:  git_env(map[string]string{})
+		cwd: dir
+		env: git_env(map[string]string{})
 	})!
 	lines << 'HEAD ' + head.stdout.trim_space()
 	return sha256.sum256(lines.join('\n').bytes()).hex()
@@ -90,10 +90,10 @@ pub fn (g Git) refs_digest(dir string) !string {
 // remotes lists a repository's remotes by name.
 pub fn (g Git) remotes(dir string) !map[string]string {
 	result := proc.run(proc.Cmd{
-		exe:  g.exe
+		exe: g.exe
 		args: ['config', '--get-regexp', r'^remote\..*\.url']
-		cwd:  dir
-		env:  git_env(map[string]string{})
+		cwd: dir
+		env: git_env(map[string]string{})
 	})!
 	mut remotes := map[string]string{}
 	for line in result.stdout.split_into_lines() {
@@ -127,50 +127,83 @@ pub fn primary_remote(remotes map[string]string) string {
 
 // commits walks every ref. refs/stash and refs/notes are excluded: they are
 // scratch space and metadata, not a record of work.
+//
+// The log is read as it arrives. A repository with a million commits would
+// otherwise exist three times over: git's output as one string, that string cut
+// into lines, and the commits themselves.
 pub fn (g Git) commits(dir string) ![]Commit {
-	r := g.at(dir, ['log', '--exclude=refs/stash', '--exclude=refs/notes/*', '--all',
-		'--no-use-mailmap', '--no-show-signature', '--format=' + commit_format])!
-	return parse_commits(r.stdout)
+	mut reader := CommitReader{}
+	proc.check_stream(proc.Cmd{
+		exe: g.exe
+		args: ['log', '--exclude=refs/stash', '--exclude=refs/notes/*', '--all', '--no-use-mailmap',
+			'--no-show-signature', '--format=' + commit_format]
+		cwd: dir
+		env: git_env(map[string]string{})
+	}, mut reader)!
+	return reader.done()
 }
 
 pub fn (g Git) scan(dir string) !Scan {
 	return Scan{
 		object_format: g.object_format(dir)!
-		refs_digest:   g.refs_digest(dir)!
-		commits:       g.commits(dir)!
+		refs_digest: g.refs_digest(dir)!
+		commits: g.commits(dir)!
 	}
+}
+
+// A CommitReader turns lines into commits as they come. It holds the record it
+// is in the middle of and the commits so far, never the log.
+struct CommitReader {
+mut:
+	fields  []string
+	commits []Commit
+}
+
+fn (mut r CommitReader) take(line string) ! {
+	r.fields << line
+	if r.fields.len < commit_fields {
+		return
+	}
+	r.commits << Commit{
+		object_id: r.fields[0]
+		parents: r.fields[1]
+		author_name: r.fields[2]
+		author_email: r.fields[3]
+		author_time: r.fields[4].i64()
+		author_tz: parse_tz(r.fields[5])
+		committer_name: r.fields[6]
+		committer_email: r.fields[7]
+		committer_time: r.fields[8].i64()
+		committer_tz: parse_tz(r.fields[9])
+		subject: r.fields[10]
+	}
+	r.fields = []string{cap: commit_fields}
+}
+
+// done refuses a record git left half written rather than reporting a commit
+// with fields belonging to another one.
+fn (r CommitReader) done() ![]Commit {
+	if r.fields.len != 0 {
+		return error('git log ended inside a record, after ${r.fields.len} of ${commit_fields} lines')
+	}
+	return r.commits
 }
 
 // parse_commits is pure so it can be tested without a repository.
 pub fn parse_commits(out string) ![]Commit {
+	mut reader := CommitReader{}
 	if out.trim_space() == '' {
-		return []Commit{}
+		return reader.done()
 	}
 	mut lines := out.split('\n')
 	// git terminates the last record with a newline, leaving one empty tail field.
 	if lines.len > 0 && lines.last() == '' {
 		lines.delete_last()
 	}
-	if lines.len % commit_fields != 0 {
-		return error('git log produced ${lines.len} lines, not a multiple of ${commit_fields}')
+	for line in lines {
+		reader.take(line)!
 	}
-	mut commits := []Commit{cap: lines.len / commit_fields}
-	for i := 0; i < lines.len; i += commit_fields {
-		commits << Commit{
-			object_id:       lines[i]
-			parents:         lines[i + 1]
-			author_name:     lines[i + 2]
-			author_email:    lines[i + 3]
-			author_time:     lines[i + 4].i64()
-			author_tz:       parse_tz(lines[i + 5])
-			committer_name:  lines[i + 6]
-			committer_email: lines[i + 7]
-			committer_time:  lines[i + 8].i64()
-			committer_tz:    parse_tz(lines[i + 9])
-			subject:         lines[i + 10]
-		}
-	}
-	return commits
+	return reader.done()
 }
 
 // parse_tz turns git's +HHMM into minutes east of UTC.

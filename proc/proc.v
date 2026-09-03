@@ -82,6 +82,59 @@ struct Child {
 	stderr int
 }
 
+// A Sink takes a child's stdout one line at a time, as it arrives. It is how a
+// caller reads output too large to want as a string.
+pub interface Sink {
+mut:
+	take(line string) !
+}
+
+// Chunks takes stdout in whatever pieces the pipe hands over. The bytes are the
+// read buffer itself and the next read overwrites them, so a consumer that
+// keeps any of it copies first.
+interface Chunks {
+mut:
+	take(chunk []u8) !
+}
+
+// A Collector is the whole stream in memory which is what run promises.
+struct Collector {
+mut:
+	bytes []u8
+}
+
+fn (mut c Collector) take(chunk []u8) ! {
+	c.bytes << chunk
+}
+
+// A Splitter cuts the stream into lines. It holds one line at most, the one
+// straddling two reads.
+struct Splitter {
+mut:
+	rest []u8
+	sink Sink
+}
+
+fn (mut s Splitter) take(chunk []u8) ! {
+	mut start := 0
+	for i, c in chunk {
+		if c != `\n` {
+			continue
+		}
+		if s.rest.len == 0 {
+			s.sink.take(chunk[start..i].bytestr())!
+		} else {
+			s.rest << chunk[start..i]
+			s.sink.take(s.rest.bytestr())!
+			s.rest = []u8{}
+		}
+		start = i + 1
+	}
+	if start < chunk.len {
+		s.rest << chunk[start..]
+	}
+}
+
 // find resolves an executable in PATH once. Callers hold the path instead of
 // paying for a PATH scan per invocation.
 pub fn find(name string) !string {
@@ -94,10 +147,41 @@ pub fn find(name string) !string {
 // A nonzero exit code is not an error here; the caller decides what it means.
 pub fn run(cmd Cmd) !Result {
 	child := start(cmd)!
-	out, errs := drain(child)
+	mut collected := Collector{}
+	errs := pump(child, mut collected) or {
+		wait_for(child.pid)
+		return err
+	}
 	return Result{
 		exit_code: wait_for(child.pid)
-		stdout: out
+		stdout: collected.bytes.bytestr()
+		stderr: truncate(errs)
+	}
+}
+
+// stream is run for a child whose output is too large to want whole: stdout
+// reaches sink line by line and Result.stdout is empty. A git log of a serious
+// repository is the reason this exists.
+pub fn stream(cmd Cmd, mut sink Sink) !Result {
+	child := start(cmd)!
+	mut lines := Splitter{
+		sink: sink
+	}
+	errs := pump(child, mut lines) or {
+		wait_for(child.pid)
+		return err
+	}
+	// A last line without its newline. git ends every record with one, this
+	// is for children that are not git.
+	if lines.rest.len > 0 {
+		lines.sink.take(lines.rest.bytestr()) or {
+			wait_for(child.pid)
+			return err
+		}
+	}
+	return Result{
+		exit_code: wait_for(child.pid)
+		stdout: ''
 		stderr: truncate(errs)
 	}
 }
@@ -187,16 +271,26 @@ fn start(cmd Cmd) !Child {
 	}
 }
 
-// drain reads both pipes until the child closes them. Both, in one loop:
-// reading one to the end deadlocks as soon as the child fills the other which
-// git does on a large clone.
-fn drain(child Child) (string, string) {
-	mut out := []u8{}
+// pump reads both pipes until the child closes them, handing stdout to out and
+// returning what stderr held. Both pipes in one loop: reading one to the end
+// deadlocks as soon as the child fills the other which git does on a large clone.
+//
+// stdout goes straight to out and is never accumulated here. What that costs is
+// decided by the consumer and a consumer that keeps nothing streams.
+fn pump(child Child, mut out Chunks) !string {
 	mut errs := []u8{}
 	mut errs_len := 0
 	mut buf := []u8{len: read_size}
 	mut fds := [child.stdout, child.stderr]!
 	mut open := 2
+
+	defer {
+		for fd in fds {
+			if fd >= 0 {
+				C.close(fd)
+			}
+		}
+	}
 
 	for open > 0 {
 		mut set := [2]C.pollfd{}
@@ -228,7 +322,7 @@ fn drain(child Child) (string, string) {
 				continue
 			}
 			if i == 0 {
-				unsafe { out.push_many(buf.data, n) }
+				out.take(buf[..n])!
 				continue
 			}
 			// Past the cap the data is still read, just not kept. Draining is
@@ -239,12 +333,7 @@ fn drain(child Child) (string, string) {
 			errs_len += n
 		}
 	}
-	for fd in fds {
-		if fd >= 0 {
-			C.close(fd)
-		}
-	}
-	return out.bytestr(), errs.bytestr()
+	return errs.bytestr()
 }
 
 // wait_for reaps the child and returns the exit code the shell would report:
@@ -266,9 +355,22 @@ fn wait_for(pid int) int {
 pub fn check(cmd Cmd) !Result {
 	r := run(cmd)!
 	if r.exit_code != 0 {
-		return error("'${os.file_name(cmd.exe)} ${cmd.args.join(' ')}' exited ${r.exit_code}: ${r.stderr.trim_space()}")
+		return exited(cmd, r)
 	}
 	return r
+}
+
+// check_stream is check for a child read line by line.
+pub fn check_stream(cmd Cmd, mut sink Sink) !Result {
+	r := stream(cmd, mut sink)!
+	if r.exit_code != 0 {
+		return exited(cmd, r)
+	}
+	return r
+}
+
+fn exited(cmd Cmd, r Result) IError {
+	return error("'${os.file_name(cmd.exe)} ${cmd.args.join(' ')}' exited ${r.exit_code}: ${r.stderr.trim_space()}")
 }
 
 pub fn child_env(remove []string, add map[string]string) map[string]string {
