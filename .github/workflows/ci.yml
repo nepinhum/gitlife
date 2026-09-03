@@ -25,8 +25,9 @@ jobs:
       - name: Setup V
         uses: vlang/setup-v@v1.7
 
-      - name: Format
-        run: v fmt -verify . # it's broken (mostly), so you can ignore if it fails
+      #- name: Format
+      #  run: v fmt -verify . # it's broken (mostly), so you can ignore if it fails
+      # because latest fmt is broken
 
       - name: Test
         run: v -old-compiler test .
