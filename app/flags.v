@@ -12,7 +12,7 @@ mut:
 	role    string = 'author'
 	name    string
 	email   string
-	limit   int    = 50
+	limit   int = 50
 	by      string = 'month'
 	jobs    int
 	dry_run bool
@@ -111,9 +111,30 @@ fn parse(args []string) !Flags {
 	return f
 }
 
+// check_date wants a day that exists.
 fn check_date(s string) !string {
 	if s.len != 10 || s[4] != `-` || s[7] != `-` {
 		return error("'${s}' is not a date; use YYYY-MM-DD")
 	}
+	for i, c in s {
+		if i != 4 && i != 7 && !c.is_digit() {
+			return error("'${s}' is not a date; use YYYY-MM-DD")
+		}
+	}
+	month := s[5..7].int()
+	day := s[8..10].int()
+	if month < 1 || month > 12 || day < 1 || day > days_in(s[..4].int(), month) {
+		return error("there is no such day as '${s}'")
+	}
 	return s
+}
+
+fn days_in(year int, month int) int {
+	return match month {
+		2 {
+			if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { 29 } else { 28 }
+		}
+		4, 6, 9, 11 { 30 }
+		else { 31 }
+	}
 }
