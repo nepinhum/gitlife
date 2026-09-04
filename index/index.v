@@ -212,21 +212,41 @@ fn (mut d DB) repository_of_location(id i64) !i64 {
 	return rows[0].val(0).i64()
 }
 
-// location_digest is the fingerprint of the refs seen the last time this location
-// was scanned successfully.
-pub fn (mut d DB) location_digest(key string) !string {
-	rows := d.conn.exec_param('SELECT refs_digest FROM repository_locations WHERE key = ?', key)!
-	if rows.len == 0 {
-		return ''
-	}
-	return rows[0].val(0)
+// LocationState is what the last successful scan of a location left behind: the
+// fingerprint of the refs it saw and the tips it stopped at.
+pub struct LocationState {
+pub:
+	digest string
+	tips   []string
 }
 
-pub fn (mut d DB) set_location_digest(key string, digest string) ! {
-	d.conn.exec_param_many('UPDATE repository_locations SET refs_digest = ? WHERE key = ?', [
+pub fn (mut d DB) location_state(key string) !LocationState {
+	rows := d.conn.exec_param('SELECT refs_digest, ref_tips FROM repository_locations WHERE key = ?',
+		key)!
+	if rows.len == 0 {
+		return LocationState{}
+	}
+	return LocationState{
+		digest: rows[0].val(0)
+		tips:   rows[0].val(1).split(' ').filter(it != '')
+	}
+}
+
+pub fn (mut d DB) set_location_state(key string, digest string, tips []string) ! {
+	d.conn.exec_param_many('UPDATE repository_locations SET refs_digest = ?, ref_tips = ?
+		WHERE key = ?', [
 		digest,
+		tips.join(' '),
 		key,
 	])!
+}
+
+// scanned_locations counts the locations of a repository that have ever been
+// walked. Membership is the union of them, a location can only reason about
+// what a repository holds on its own when it is the only one.
+pub fn (mut d DB) scanned_locations(repository_id i64) !int {
+	return d.conn.q_int("SELECT count(*) FROM repository_locations
+		WHERE repository_id = ${repository_id} AND refs_digest != ''")!
 }
 
 // replace_remotes records every remote a repository has, as evidence. These are
@@ -327,47 +347,7 @@ pub fn (mut d DB) write_snapshot(repository_id i64, scan gitrepo.Scan, fresh boo
 
 fn (mut d DB) apply_snapshot(repository_id i64, scan gitrepo.Scan, fresh bool) !int {
 	before := d.conn.q_int('SELECT COALESCE(MAX(id), 0) FROM commits')!
-	mut idents := Batch{
-		query: 'INSERT OR IGNORE INTO git_identities (name, email, email_norm)
-			VALUES (?, ?, ?)'
-	}
-	mut seen := map[string]bool{}
-	for c in scan.commits {
-		add_identity(mut idents, mut d, mut seen, c.author_name, c.author_email)!
-		add_identity(mut idents, mut d, mut seen, c.committer_name, c.committer_email)!
-	}
-	idents.send(mut d)!
-
-	mut commits := Batch{
-		query: "INSERT OR IGNORE INTO commits (
-				object_format, object_id, parents,
-				author_identity_id, author_time, author_tz, author_date,
-				committer_identity_id, committer_time, committer_tz, committer_date,
-				subject)
-			VALUES (?, ?, ?,
-				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, 'unixepoch'),
-				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, 'unixepoch'),
-				?)"
-	}
-	for c in scan.commits {
-		commits.add(mut d, [
-			scan.object_format,
-			c.object_id,
-			c.parents,
-			c.author_name,
-			c.author_email,
-			c.author_time.str(),
-			c.author_tz.str(),
-			(c.author_time + c.author_tz * 60).str(),
-			c.committer_name,
-			c.committer_email,
-			c.committer_time.str(),
-			c.committer_tz.str(),
-			(c.committer_time + c.committer_tz * 60).str(),
-			c.subject,
-		])!
-	}
-	commits.send(mut d)!
+	d.insert_commits(scan.object_format, scan.commits)!
 
 	// Membership is diffed against what the location holds, not replaced by it.
 	d.conn.exec('DELETE FROM scanned_commits')!
@@ -394,6 +374,101 @@ fn (mut d DB) apply_snapshot(repository_id i64, scan gitrepo.Scan, fresh bool) !
 		id,
 	])!
 	return int(d.conn.q_int('SELECT COALESCE(MAX(id), 0) FROM commits')! - before)
+}
+
+// write_delta records what changed for a location instead of what it holds:
+// the commits that came into scope and the ones that left it. It returns how
+// many commits the index had never seen and how many the repository holds now.
+//
+// Only a repository with a single scanned location can be written this way. A
+// commit leaving one location's scope says nothing about whether another
+// location still reaches it, and membership is the union of them.
+pub fn (mut d DB) write_delta(repository_id i64, object_format string, added []gitrepo.Commit, dropped []string) !(int, int) {
+	d.conn.begin()!
+	fresh, held := d.apply_delta(repository_id, object_format, added, dropped) or {
+		d.conn.rollback() or {}
+		return err
+	}
+	d.conn.commit()!
+	return fresh, held
+}
+
+fn (mut d DB) apply_delta(repository_id i64, object_format string, added []gitrepo.Commit, dropped []string) !(int, int) {
+	before := d.conn.q_int('SELECT COALESCE(MAX(id), 0) FROM commits')!
+	d.insert_commits(object_format, added)!
+
+	id := repository_id.str()
+	mut members := Batch{
+		query: 'INSERT OR IGNORE INTO repository_commits (repository_id, commit_id)
+			VALUES (?, (SELECT id FROM commits WHERE object_format = ? AND object_id = ?))'
+	}
+	for c in added {
+		members.add(mut d, [id, object_format, c.object_id])!
+	}
+	members.send(mut d)!
+
+	// A commit nothing reaches any more stops counting for this repository. The
+	// commit row itself stays: another repository may hold it and purge is what
+	// forgets a commit for good.
+	mut gone := Batch{
+		query: 'DELETE FROM repository_commits
+			WHERE repository_id = ?
+			AND commit_id = (SELECT id FROM commits WHERE object_format = ? AND object_id = ?)'
+	}
+	for oid in dropped {
+		gone.add(mut d, [id, object_format, oid])!
+	}
+	gone.send(mut d)!
+
+	held := d.conn.q_int('SELECT count(*) FROM repository_commits WHERE repository_id = ${repository_id}')!
+	return int(d.conn.q_int('SELECT COALESCE(MAX(id), 0) FROM commits')! - before), held
+}
+
+// insert_commits writes the commits themselves and the identities they name.
+// A commit row is never updated, so the same commit reached twice costs a lookup
+// and nothing else.
+fn (mut d DB) insert_commits(object_format string, commits []gitrepo.Commit) ! {
+	mut idents := Batch{
+		query: 'INSERT OR IGNORE INTO git_identities (name, email, email_norm)
+			VALUES (?, ?, ?)'
+	}
+	mut seen := map[string]bool{}
+	for c in commits {
+		add_identity(mut idents, mut d, mut seen, c.author_name, c.author_email)!
+		add_identity(mut idents, mut d, mut seen, c.committer_name, c.committer_email)!
+	}
+	idents.send(mut d)!
+
+	mut rows := Batch{
+		query: "INSERT OR IGNORE INTO commits (
+				object_format, object_id, parents,
+				author_identity_id, author_time, author_tz, author_date,
+				committer_identity_id, committer_time, committer_tz, committer_date,
+				subject)
+			VALUES (?, ?, ?,
+				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, 'unixepoch'),
+				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, 'unixepoch'),
+				?)"
+	}
+	for c in commits {
+		rows.add(mut d, [
+			object_format,
+			c.object_id,
+			c.parents,
+			c.author_name,
+			c.author_email,
+			c.author_time.str(),
+			c.author_tz.str(),
+			(c.author_time + c.author_tz * 60).str(),
+			c.committer_name,
+			c.committer_email,
+			c.committer_time.str(),
+			c.committer_tz.str(),
+			(c.committer_time + c.committer_tz * 60).str(),
+			c.subject,
+		])!
+	}
+	rows.send(mut d)!
 }
 
 // rows_per_batch is how many rows an insert holds at once. The statement is

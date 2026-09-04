@@ -11,7 +11,7 @@ database, and no worker thread ever holds the connection.
 discover  what repositories exist              (serial, one call per source)
 prepare   clone or fetch, fingerprint refs     (parallel, no database)
 register  resolve identity, decide what moved  (serial, database)
-read      walk the commits                     (parallel, no database)
+read      walk the commits, or what changed    (parallel, no database)
 write     bring the snapshots up to date       (serial, database)
 ```
 
@@ -20,6 +20,12 @@ while the writer takes each walk, in task order and inserts it. A history is
 held from the moment its worker finished with it until it is in the database,
 and not a moment longer, so a run costs a history per worker rather than one per
 repository.
+
+A location the index has walked before is walked as a difference: its stored ref
+tips say where the last walk stopped and git is asked for what came into scope
+since and what left it. A location seen for the first time, one whose old tips
+have been garbage collected and any repository with more than one walked
+location are walked whole.
 
 Registration is separate from preparation because a repository can be reachable
 through more than one location. A working tree and a cached clone of the same
