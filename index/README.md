@@ -9,6 +9,11 @@ in two repositories is the same commit. What changes is membership:
 `repository_commits` is replaced wholesale, per repository, per run, from the
 union of that repository's locations.
 
+A snapshot is written through `Batch` which holds a few thousand rows and no
+more. Every commit of a repository used to become a row of strings before the
+first of them was written, a second copy of the history on top of the walk that
+produced it. That copy is now a fixed size whatever the repository holds.
+
 Every report counts the same set of commits through `Filter.mine`, keeping
 two reports from disagreeing about what belongs to the user.
 

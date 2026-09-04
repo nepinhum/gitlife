@@ -323,20 +323,30 @@ pub fn (mut d DB) write_snapshot(repository_id i64, scan gitrepo.Scan, fresh boo
 
 fn (mut d DB) apply_snapshot(repository_id i64, scan gitrepo.Scan, fresh bool) !int {
 	before := d.conn.q_int('SELECT COALESCE(MAX(id), 0) FROM commits')!
-	mut idents := [][]string{}
+	mut idents := Batch{
+		query: 'INSERT OR IGNORE INTO git_identities (name, email, email_norm)
+			VALUES (?, ?, ?)'
+	}
 	mut seen := map[string]bool{}
 	for c in scan.commits {
-		add_identity(mut idents, mut seen, c.author_name, c.author_email)
-		add_identity(mut idents, mut seen, c.committer_name, c.committer_email)
+		add_identity(mut idents, mut d, mut seen, c.author_name, c.author_email)!
+		add_identity(mut idents, mut d, mut seen, c.committer_name, c.committer_email)!
 	}
-	if idents.len > 0 {
-		d.conn.exec_param_many('INSERT OR IGNORE INTO git_identities (name, email, email_norm)
-			VALUES (?, ?, ?)', idents)!
-	}
+	idents.send(mut d)!
 
-	mut rows := [][]string{cap: scan.commits.len}
+	mut commits := Batch{
+		query: "INSERT OR IGNORE INTO commits (
+				object_format, object_id, parents,
+				author_identity_id, author_time, author_tz, author_date,
+				committer_identity_id, committer_time, committer_tz, committer_date,
+				subject)
+			VALUES (?, ?, ?,
+				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, 'unixepoch'),
+				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, 'unixepoch'),
+				?)"
+	}
 	for c in scan.commits {
-		rows << [
+		commits.add(mut d, [
 			scan.object_format,
 			c.object_id,
 			c.parents,
@@ -351,48 +361,70 @@ fn (mut d DB) apply_snapshot(repository_id i64, scan gitrepo.Scan, fresh bool) !
 			c.committer_tz.str(),
 			(c.committer_time + c.committer_tz * 60).str(),
 			c.subject,
-		]
+		])!
 	}
-	if rows.len > 0 {
-		d.conn.exec_param_many("INSERT OR IGNORE INTO commits (
-				object_format, object_id, parents,
-				author_identity_id, author_time, author_tz, author_date,
-				committer_identity_id, committer_time, committer_tz, committer_date,
-				subject)
-			VALUES (?, ?, ?,
-				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, 'unixepoch'),
-				(SELECT id FROM git_identities WHERE name = ? AND email = ?), ?, ?, date(?, 'unixepoch'),
-				?)", rows)!
-	}
+	commits.send(mut d)!
 
 	// Full snapshot replacement. Membership reflects the latest successful scan,
 	// and a deleted branch stops counting with no drift to reconcile.
+	id := repository_id.str()
 	if fresh {
-		d.conn.exec_param('DELETE FROM repository_commits WHERE repository_id = ?', repository_id.str())!
+		d.conn.exec_param('DELETE FROM repository_commits WHERE repository_id = ?', id)!
 	}
-	mut members := [][]string{cap: scan.commits.len}
+	mut members := Batch{
+		query: 'INSERT OR IGNORE INTO repository_commits (repository_id, commit_id)
+			VALUES (?, (SELECT id FROM commits WHERE object_format = ? AND object_id = ?))'
+	}
 	for c in scan.commits {
-		members << [repository_id.str(), scan.object_format, c.object_id]
+		members.add(mut d, [id, scan.object_format, c.object_id])!
 	}
-	if members.len > 0 {
-		d.conn.exec_param_many('INSERT OR IGNORE INTO repository_commits (repository_id, commit_id)
-			VALUES (?, (SELECT id FROM commits WHERE object_format = ? AND object_id = ?))', members)!
-	}
+	members.send(mut d)!
 
 	d.conn.exec_param_many('UPDATE repositories SET object_format = ? WHERE id = ?', [
 		scan.object_format,
-		repository_id.str(),
+		id,
 	])!
 	return int(d.conn.q_int('SELECT COALESCE(MAX(id), 0) FROM commits')! - before)
 }
 
-fn add_identity(mut rows [][]string, mut seen map[string]bool, name string, email string) {
+// rows_per_batch is how many rows an insert holds at once. The statement is
+// prepared once per call and stepped once per row, so a smaller group costs one
+// more prepare and saves a second copy of the history: every commit of a
+// repository used to be turned into fourteen strings and every one of them kept
+// until the last row was built.
+const rows_per_batch = 2000
+
+// A Batch feeds one statement in bounded groups.
+struct Batch {
+	query string
+mut:
+	pending [][]string
+}
+
+fn (mut b Batch) add(mut d DB, row []string) ! {
+	b.pending << row
+	if b.pending.len >= rows_per_batch {
+		b.send(mut d)!
+	}
+}
+
+// send writes what has piled up. The rows are dropped, not just forgotten: they
+// are the whole reason the batch exists.
+fn (mut b Batch) send(mut d DB) ! {
+	if b.pending.len == 0 {
+		return
+	}
+	d.conn.exec_param_many(b.query, b.pending)!
+	b.pending = [][]string{cap: rows_per_batch}
+}
+
+fn add_identity(mut b Batch, mut d DB, mut seen map[string]bool, name string, email string) ! {
 	key := name + '\x1f' + email
 	if key in seen {
 		return
 	}
 	seen[key] = true
-	rows << [name, email, identity.norm_email(email)]
+	b.add(mut d, [name, email, identity.norm_email(email)])!
 }
 
 fn bit(b bool) string {
