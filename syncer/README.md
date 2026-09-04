@@ -12,7 +12,7 @@ discover  what repositories exist              (serial, one call per source)
 prepare   clone or fetch, fingerprint refs     (parallel, no database)
 register  resolve identity, decide what moved  (serial, database)
 read      walk the commits                     (parallel, no database)
-write     replace the snapshots                (serial, database)
+write     bring the snapshots up to date       (serial, database)
 ```
 
 Read and write are one loop rather than two phases: workers walk repositories
@@ -23,8 +23,8 @@ repository.
 
 Registration is separate from preparation because a repository can be reachable
 through more than one location. A working tree and a cached clone of the same
-origin are one repository and membership must be replaced once from the union of
-them rather than once per location with each overwriting the last.
+origin are one repository and its membership is the union of them, not whichever
+was scanned last.
 
 Work is handed out round robin and taken back in that same order, making the
 output of `--jobs 8` byte identical to the output of `--jobs 1`.

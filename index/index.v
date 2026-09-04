@@ -28,6 +28,10 @@ pub fn open(path string) !&DB {
 	conn.busy_timeout(5000)
 	conn.exec('PRAGMA journal_mode = WAL')!
 	conn.exec('PRAGMA foreign_keys = ON')!
+	// Scratch space for diffing a repository's membership. It belongs to this
+	// connection rather than to the file, so it is not schema and needs no
+	// migration. The commit id is the rowid which is the whole index it needs.
+	conn.exec('CREATE TEMP TABLE scanned_commits (commit_id INTEGER PRIMARY KEY)')!
 	mut d := &DB{
 		conn: conn
 	}
@@ -365,20 +369,25 @@ fn (mut d DB) apply_snapshot(repository_id i64, scan gitrepo.Scan, fresh bool) !
 	}
 	commits.send(mut d)!
 
-	// Full snapshot replacement. Membership reflects the latest successful scan,
-	// and a deleted branch stops counting with no drift to reconcile.
-	id := repository_id.str()
-	if fresh {
-		d.conn.exec_param('DELETE FROM repository_commits WHERE repository_id = ?', id)!
-	}
-	mut members := Batch{
-		query: 'INSERT OR IGNORE INTO repository_commits (repository_id, commit_id)
-			VALUES (?, (SELECT id FROM commits WHERE object_format = ? AND object_id = ?))'
+	// Membership is diffed against what the location holds, not replaced by it.
+	d.conn.exec('DELETE FROM scanned_commits')!
+	mut scanned := Batch{
+		query: 'INSERT OR IGNORE INTO scanned_commits (commit_id)
+			SELECT id FROM commits WHERE object_format = ? AND object_id = ?'
 	}
 	for c in scan.commits {
-		members.add(mut d, [id, scan.object_format, c.object_id])!
+		scanned.add(mut d, [scan.object_format, c.object_id])!
 	}
-	members.send(mut d)!
+	scanned.send(mut d)!
+
+	id := repository_id.str()
+	d.conn.exec_param('INSERT OR IGNORE INTO repository_commits (repository_id, commit_id)
+		SELECT ?, commit_id FROM scanned_commits', id)!
+	if fresh {
+		d.conn.exec_param('DELETE FROM repository_commits
+			WHERE repository_id = ?
+			AND commit_id NOT IN (SELECT commit_id FROM scanned_commits)', id)!
+	}
 
 	d.conn.exec_param_many('UPDATE repositories SET object_format = ? WHERE id = ?', [
 		scan.object_format,

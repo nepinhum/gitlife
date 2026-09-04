@@ -6,8 +6,14 @@ migrations and every read and write against them.
 A commit is keyed globally by `(object_format, object_id)` and written with
 `INSERT OR IGNORE`. A commit row is never updated because the same commit found
 in two repositories is the same commit. What changes is membership:
-`repository_commits` is replaced wholesale, per repository, per run, from the
-union of that repository's locations.
+`repository_commits` holds, per repository, the union of what that repository's
+locations reach.
+
+Membership is diffed rather than rewritten. A location's set goes into the
+`scanned_commits` scratch table, the commits missing from membership are added,
+the ones the location no longer reaches are removed, and everything else is left
+where it is. One new commit used to mean deleting every membership row a
+repository had and writing all of them back.
 
 A snapshot is written through `Batch` which holds a few thousand rows and no
 more. Every commit of a repository used to become a row of strings before the
