@@ -15,13 +15,19 @@ read      walk the commits                     (parallel, no database)
 write     replace the snapshots                (serial, database)
 ```
 
+Read and write are one loop rather than two phases: workers walk repositories
+while the writer takes each walk, in task order and inserts it. A history is
+held from the moment its worker finished with it until it is in the database,
+and not a moment longer, so a run costs a history per worker rather than one per
+repository.
+
 Registration is separate from preparation because a repository can be reachable
 through more than one location. A working tree and a cached clone of the same
 origin are one repository and membership must be replaced once from the union of
 them rather than once per location with each overwriting the last.
 
-Work is handed out round robin and the results are put back in order, making
-the output of `--jobs 8` byte identical to the output of `--jobs 1`.
+Work is handed out round robin and taken back in that same order, making the
+output of `--jobs 8` byte identical to the output of `--jobs 1`.
 
 `Deps` carries the credential and the provider client as values rather than as
 constructions inside the sync, lets a test supply a fixture transport and a

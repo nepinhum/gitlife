@@ -115,7 +115,8 @@ struct Task {
 	fresh bool
 }
 
-// Scanned is a worker's walk of one task's commits.
+// Scanned is a worker's walk of one task's commits. It lives from the moment its
+// worker hands it over until the writer is done with it and no longer.
 struct Scanned {
 	commits    []gitrepo.Commit
 	elapsed_ms int
@@ -212,7 +213,7 @@ pub fn run(c config.Config, mut d index.DB, o Options) !Report {
 		})
 		d.record_sync('repository', task.location_key, 'ok', '', p.now) or {}
 	}
-	write(scan, read_all(p, scan), mut d, mut report, mut broken, p.now)
+	write(p, scan, mut d, mut report, mut broken, p.now)
 
 	for s in selected {
 		id := s.id()
@@ -417,37 +418,26 @@ fn plan(tasks []Task) ([]Task, []Task) {
 	return scan, unchanged
 }
 
-fn read_all(p Pass, tasks []Task) []Scanned {
-	if tasks.len == 0 {
-		return []Scanned{}
+// read walks one location's commits and times the walk.
+fn read(p Pass, task Task) Scanned {
+	started := time.ticks()
+	commits := p.git.commits(task.dir) or {
+		return Scanned{
+			error: err.msg()
+		}
 	}
-	if p.jobs <= 1 || tasks.len == 1 {
-		return read_stride(p, tasks, 0, 1)
+	return Scanned{
+		commits:    commits
+		elapsed_ms: int(time.ticks() - started)
 	}
-	stride := if p.jobs < tasks.len { p.jobs } else { tasks.len }
-	mut threads := []thread []Scanned{}
-	for w in 0 .. stride {
-		threads << spawn read_stride(p, tasks, w, stride)
-	}
-	return regroup(threads.wait(), stride, tasks.len)
 }
 
-fn read_stride(p Pass, tasks []Task, first int, stride int) []Scanned {
-	mut out := []Scanned{}
+// read_stride is one worker's share, handed over one walk at a time. Same round
+// robin as prepare_stride, for the same reason.
+fn read_stride(p Pass, tasks []Task, first int, stride int, out chan Scanned) {
 	for i := first; i < tasks.len; i += stride {
-		started := time.ticks()
-		commits := p.git.commits(tasks[i].dir) or {
-			out << Scanned{
-				error: err.msg()
-			}
-			continue
-		}
-		out << Scanned{
-			commits:    commits
-			elapsed_ms: int(time.ticks() - started)
-		}
+		out <- read(p, tasks[i])
 	}
-	return out
 }
 
 fn regroup[T](parts [][]T, stride int, total int) []T {
@@ -460,35 +450,59 @@ fn regroup[T](parts [][]T, stride int, total int) []T {
 	return out
 }
 
-fn write(tasks []Task, scans []Scanned, mut d index.DB, mut report Report, mut broken map[string]bool, now i64) {
-	for i, task in tasks {
-		scan := scans[i]
-		if scan.error != '' {
-			fail_repository(mut d, mut report, mut broken, task.source_id, task.name,
-				task.location_key, scan.error, now)
-			continue
-		}
-		fresh := d.write_snapshot(task.repository_id, gitrepo.Scan{
-			object_format: task.object_format
-			refs_digest:   task.digest
-			commits:       scan.commits
-		}, task.fresh) or {
-			fail_repository(mut d, mut report, mut broken, task.source_id, task.name,
-				task.location_key, err.msg(), now)
-			continue
-		}
-		d.set_location_digest(task.location_key, task.digest) or {}
-		report.add(Outcome{
-			source:      task.source_id
-			repository:  task.name
-			status:      'ok'
-			action:      task.action
-			commits:     scan.commits.len
-			new_commits: fresh
-			elapsed_ms:  task.elapsed_ms + scan.elapsed_ms
-		})
-		d.record_sync('repository', task.location_key, 'ok', '', now) or {}
+fn write(p Pass, tasks []Task, mut d index.DB, mut report Report, mut broken map[string]bool, now i64) {
+	if tasks.len == 0 {
+		return
 	}
+	if p.jobs <= 1 || tasks.len == 1 {
+		for task in tasks {
+			store(task, read(p, task), mut d, mut report, mut broken, now)
+		}
+		return
+	}
+	stride := if p.jobs < tasks.len { p.jobs } else { tasks.len }
+
+	mut handovers := []chan Scanned{cap: stride}
+	for _ in 0 .. stride {
+		handovers << chan Scanned{}
+	}
+	mut threads := []thread{cap: stride}
+	for w in 0 .. stride {
+		threads << spawn read_stride(p, tasks, w, stride, handovers[w])
+	}
+	for i, task in tasks {
+		store(task, <-handovers[i % stride], mut d, mut report, mut broken, now)
+	}
+	threads.wait()
+}
+
+// store puts one walked location in the index and reports what it cost.
+fn store(task Task, scan Scanned, mut d index.DB, mut report Report, mut broken map[string]bool, now i64) {
+	if scan.error != '' {
+		fail_repository(mut d, mut report, mut broken, task.source_id, task.name, task.location_key,
+			scan.error, now)
+		return
+	}
+	fresh := d.write_snapshot(task.repository_id, gitrepo.Scan{
+		object_format: task.object_format
+		refs_digest:   task.digest
+		commits:       scan.commits
+	}, task.fresh) or {
+		fail_repository(mut d, mut report, mut broken, task.source_id, task.name, task.location_key,
+			err.msg(), now)
+		return
+	}
+	d.set_location_digest(task.location_key, task.digest) or {}
+	report.add(Outcome{
+		source:      task.source_id
+		repository:  task.name
+		status:      'ok'
+		action:      task.action
+		commits:     scan.commits.len
+		new_commits: fresh
+		elapsed_ms:  task.elapsed_ms + scan.elapsed_ms
+	})
+	d.record_sync('repository', task.location_key, 'ok', '', now) or {}
 }
 
 fn discover_github(p Pass, s config.Source, id string, mut d index.DB, mut report Report, mut broken map[string]bool) []discover.Found {

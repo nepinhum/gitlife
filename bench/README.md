@@ -74,12 +74,6 @@ The interesting comparisons, not the absolute seconds:
 - `unchanged` against `first-j8`. The gap is what the ref digest fast path buys.
 - `plus1` against `first-j8`. They are nearly equal today, which is issue #1:
   one new commit costs a full history rescan.
-- `rss_tree_kb` at `first-j1` against `first-j8`. Growth with jobs is issue #2.
+- `rss_tree_kb` at `first-j1` against `first-j8`. A run holds a history per
+  worker, so the gap should follow the jobs and not the number of repositories.
 - `db_bytes` between runs. It should not grow when nothing new was indexed.
-
-## A warning about --jobs
-
-Parallel sync deadlocks. `--jobs 1` is stable; anything above it hangs a fair
-part of the time, forked but not yet exec'd, so a benchmark run can stall until
-`GITLIFE_TIMEOUT` kills it. A killed case is still written to the results file
-and flagged on stderr. Until that is fixed, the `-j8` cases will be flaky.

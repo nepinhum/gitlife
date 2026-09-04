@@ -29,7 +29,8 @@ and provider discovered repositories alike.
 | `report` | rendering, as a table or as JSON |
 
 A sync is five phases. Discover, register and write are serial and own the
-database; prepare and read run in parallel and never touch it.
+database; prepare and read run in parallel and never touch it. Read hands each
+repository to write as it finishes with it.
 
 Each module carries a `README.md`. That is how V documents a module and how the
 LSP reads it; a comment above `module x` is invisible to both.
