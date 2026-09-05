@@ -244,6 +244,14 @@ pub fn (mut d DB) set_location_state(key string, digest string, tips []string) !
 	])!
 }
 
+// mark_walked records that a location is about to add to its repository's
+// membership. It runs before the membership is written rather than after: a run
+// that stopped in between would otherwise leave commits behind that no location
+// admits to and a later run would replace the membership they belong to.
+pub fn (mut d DB) mark_walked(key string) ! {
+	d.conn.exec_param('UPDATE repository_locations SET walked = 1 WHERE key = ?', key)!
+}
+
 // walked_locations names the locations of a repository that have ever been
 // walked.
 pub fn (mut d DB) walked_locations(repository_id i64) ![]string {

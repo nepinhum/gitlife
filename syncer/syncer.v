@@ -563,6 +563,11 @@ fn store(task Task, scan Scanned, mut d index.DB, mut report Report, mut broken 
 			scan.error, now)
 		return
 	}
+	d.mark_walked(task.location_key) or {
+		fail_repository(mut d, mut report, mut broken, task.source_id, task.name, task.location_key,
+			err.msg(), now)
+		return
+	}
 	mut fresh := 0
 	mut held := scan.commits.len
 	if scan.delta {
