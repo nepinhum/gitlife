@@ -20,7 +20,7 @@ reach are ancestors of the very tips a difference would exclude.
 
 Every walk shares one ref scope. An incremental walk that disagreed with the full
 one about which refs count would add commits that a later full walk removes. The
-scope leaves out what is not history: the stash, notes and replacements. A graft
-rewrites the graph git reports, so what is indexed is the history that is
-actually there, which is also the only one two walks taken at different times
-can agree on.
+scope leaves out what is not history: the stash, notes and replacements. A
+replacement and the older graft file both rewrite the graph git reports, and both
+are turned off, so what is indexed is the history that is actually there, which
+is also the only one two walks taken at different times can agree on.

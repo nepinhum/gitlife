@@ -2,7 +2,7 @@ module index
 
 // schema_version is bumped whenever a migration is appended. A database written
 // by a newer gitlife is refused rather than guessed at.
-const schema_version = 5
+const schema_version = 6
 
 // migrations[v - 1] holds the statements that take the schema to version v.
 // Statements are listed one per entry because SQLite prepares a single statement
@@ -13,6 +13,7 @@ const migrations = [
 	v3,
 	v4,
 	v5,
+	v6,
 ]
 
 const v1 = [
@@ -133,4 +134,13 @@ const v4 = [
 const v5 = [
 	'ALTER TABLE repository_locations ADD COLUMN walked INTEGER NOT NULL DEFAULT 0',
 	"UPDATE repository_locations SET walked = 1 WHERE refs_digest != ''",
+]
+
+// v6 drops every fingerprint taken while git was still rewriting ancestry from
+// replacements and grafts. Those locations were fingerprinted for a different
+// question and hold whatever the rewritten graph reported. One full walk each
+// puts the history that is really there in its place. What they contributed
+// stands until then which is the safe direction to be wrong in.
+const v6 = [
+	"UPDATE repository_locations SET refs_digest = '', ref_tips = ''",
 ]

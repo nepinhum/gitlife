@@ -25,10 +25,12 @@ pub fn git_env(extra map[string]string) map[string]string {
 		'GIT_TRACE_REDACT':       '1'
 		// An unattended sync must never block on a prompt.
 		'GIT_TERMINAL_PROMPT':    '0'
-		// git substitutes replaced objects by default. What is indexed is the
-		// history that is actually there which is also the only one two walks
-		// taken at different times can agree on.
+		// git rewrites ancestry from replacements and from the graft file before
+		// it reports any of it. What is indexed is the history that is actually
+		// there which is also the only one two walks taken at different times
+		// can agree on.
 		'GIT_NO_REPLACE_OBJECTS': '1'
+		'GIT_GRAFT_FILE':         '/dev/null'
 	}
 	for name, value in extra {
 		add[name] = value
