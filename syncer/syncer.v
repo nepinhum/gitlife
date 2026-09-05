@@ -117,6 +117,10 @@ struct Task {
 	// Only that one clears the previous membership; the rest add to it. No
 	// location is fresh in a run that doesn't reach all of them.
 	fresh bool
+	// whole says the run holds every location that fed this repository's
+	// membership. A run that doesn't can only add to that membership, so it still
+	// owes it a removal and records no state for what it walked.
+	whole bool
 }
 
 // Scanned is a worker's walk of one task's commits. It lives from the moment its
@@ -464,6 +468,7 @@ fn plan(tasks []Task, mut d index.DB) ([]Task, []Task) {
 			scan << Task{
 				...task
 				fresh:    whole && i == 0
+				whole:    whole
 				previous: if alone { task.previous } else { []string{} }
 			}
 		}
@@ -578,7 +583,7 @@ fn store(task Task, scan Scanned, mut d index.DB, mut report Report, mut broken 
 			return
 		}
 	}
-	if scan.refs.digest == task.refs.digest {
+	if task.whole && scan.refs.digest == task.refs.digest {
 		d.set_location_state(task.location_key, task.refs.digest, task.refs.tips) or {}
 	} else {
 		d.set_location_state(task.location_key, '', []string{}) or {}

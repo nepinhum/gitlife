@@ -134,6 +134,11 @@ const v4 = [
 const v5 = [
 	'ALTER TABLE repository_locations ADD COLUMN walked INTEGER NOT NULL DEFAULT 0',
 	"UPDATE repository_locations SET walked = 1 WHERE refs_digest != ''",
+
+	"UPDATE repository_locations SET walked = 1
+		WHERE kind = 'remote' AND repository_id IN (
+			SELECT dc.repository_id FROM discoveries dc JOIN sources s ON s.id = dc.source_id
+			WHERE s.kind IN ('git', 'github'))",
 ]
 
 // v6 drops every fingerprint taken while git was still rewriting ancestry from
