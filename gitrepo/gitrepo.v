@@ -115,10 +115,14 @@ pub fn (g Git) refs(dir string) !Refs {
 	oid := if answers.len > 1 { answers[1] } else { '' }
 	add_tip(mut tips, mut seen, oid)
 	lines << 'HEAD ' + oid
+	shallow := answers.len > 0 && answers[0] == 'true'
+	if shallow {
+		lines << 'shallow'
+	}
 	return Refs{
 		digest:  sha256.sum256(lines.join('\n').bytes()).hex()
-		tips:    tips
-		shallow: answers.len > 0 && answers[0] == 'true'
+		tips:    if shallow { []string{} } else { tips }
+		shallow: shallow
 	}
 }
 
