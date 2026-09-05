@@ -24,8 +24,14 @@ repository.
 A location the index has walked before is walked as a difference: its stored ref
 tips say where the last walk stopped and git is asked for what came into scope
 since and what left it. A location seen for the first time, one whose old tips
-have been garbage collected and any repository with more than one walked
-location are walked whole.
+have been garbage collected, any repository with more than one walked location
+and any repository whose history is truncated are walked whole.
+
+A walk records where it stopped only when the refs it was handed are still the
+refs it ended on. A repository that moved while it was being read was walked at
+a state nobody fingerprinted, its location is marked unwalked and the next
+sync walks it whole rather than trusting a fingerprint of a history it never
+wrote.
 
 Registration is separate from preparation because a repository can be reachable
 through more than one location. A working tree and a cached clone of the same

@@ -399,21 +399,26 @@ fn enter(item Prepared, mut d index.DB, now i64) !Task {
 		refs:          item.refs
 		action:        item.action
 		elapsed_ms:    item.elapsed_ms
-		changed:       item.refs.digest != last.digest
-		previous:      incremental(last, repository_id, mut d)
+		// A shallow repository is never called unchanged. A fetch can deepen it
+		// without moving a ref, leaving the digest saying nothing happened
+		// while the history it holds has grown.
+		changed:  item.refs.digest != last.digest || item.refs.shallow
+		previous: incremental(last, item.refs, repository_id, mut d)
 	}
 }
 
 // incremental decides whether this location can be walked as a difference and
 // answers with the tips to walk from or with nothing.
 //
-// Two conditions. The location must have been walked before or there is no
-// difference to take. And it must be the only location of its repository the
-// index has ever walked: membership is the union of a repository's locations.
-// Locations that join that union in this run are ruled out in plan which is the
-// first place the whole run is known.
-fn incremental(last index.LocationState, repository_id i64, mut d index.DB) []string {
-	if last.digest == '' || last.tips.len == 0 {
+// Three conditions. The location must have been walked before or there is no
+// difference to take. It must be the only location of its repository the index
+// has ever walked: membership is the union of a repository's locations and
+// locations that join that union in this run are ruled out in plan which is the
+// first place the whole run is known. And the history must be whole: deepening a
+// shallow repository puts ancestors of the old tips in reach and a difference
+// taken from those tips calls exactly those ancestors uninteresting.
+fn incremental(last index.LocationState, refs gitrepo.Refs, repository_id i64, mut d index.DB) []string {
+	if last.digest == '' || last.tips.len == 0 || refs.shallow {
 		return []string{}
 	}
 	if d.scanned_locations(repository_id) or { 2 } != 1 {

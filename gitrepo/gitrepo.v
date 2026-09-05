@@ -37,6 +37,10 @@ pub struct Refs {
 pub:
 	digest string
 	tips   []string
+	// shallow says the history is truncated. What such a repository holds can
+	// grow without a ref moving, so its digest can't be trusted to say that
+	// nothing changed.
+	shallow bool
 }
 
 pub struct Scan {
@@ -98,19 +102,20 @@ pub fn (g Git) refs(dir string) !Refs {
 			add_tip(mut tips, mut seen, line[..space])
 		}
 	}
-	// An empty repository has no HEAD to resolve; that is not a failure.
 	head := proc.run(proc.Cmd{
 		exe: g.exe
-		args: ['rev-parse', '--verify', '--quiet', 'HEAD']
+		args: ['rev-parse', '--is-shallow-repository', '--verify', '--quiet', 'HEAD']
 		cwd: dir
 		env: git_env(map[string]string{})
 	})!
-	oid := head.stdout.trim_space()
+	answers := head.stdout.split_into_lines().filter(it != '')
+	oid := if answers.len > 1 { answers[1] } else { '' }
 	add_tip(mut tips, mut seen, oid)
 	lines << 'HEAD ' + oid
 	return Refs{
-		digest: sha256.sum256(lines.join('\n').bytes()).hex()
-		tips:   tips
+		digest:  sha256.sum256(lines.join('\n').bytes()).hex()
+		tips:    tips
+		shallow: answers.len > 0 && answers[0] == 'true'
 	}
 }
 
