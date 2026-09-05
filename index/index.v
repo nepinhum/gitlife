@@ -244,6 +244,14 @@ pub fn (mut d DB) set_location_state(key string, digest string, tips []string) !
 	])!
 }
 
+// walked_locations names the locations of a repository that have ever been
+// walked.
+pub fn (mut d DB) walked_locations(repository_id i64) ![]string {
+	rows := d.conn.exec('SELECT key FROM repository_locations
+		WHERE repository_id = ${repository_id} AND walked = 1')!
+	return rows.map(it.val(0))
+}
+
 // scanned_locations counts the locations of a repository that have ever been
 // walked. Membership is the union of them, a location can only reason about
 // what a repository holds on its own when it is the only one. What counts is

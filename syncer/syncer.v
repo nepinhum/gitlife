@@ -449,8 +449,17 @@ fn plan(tasks []Task, mut d index.DB) ([]Task, []Task) {
 		// whole at every one of them. Its membership is the union of what they
 		// reach and a difference taken at one location would drop commits the
 		// others still hold.
-		alone := group.len == 1
-		whole := d.scanned_locations(group[0].repository_id) or { group.len } <= group.len
+		mut here := map[string]bool{}
+		for task in group {
+			here[task.location_key] = true
+		}
+		alone := here.len == 1
+		// Membership is only replaced when the run holds every location that fed
+		// it, named rather than counted: two sources can offer the same location
+		// while a third is missing and the count would call that whole. An
+		// unanswered question counts as a location that is missing.
+		fed := d.walked_locations(group[0].repository_id) or { [''] }
+		whole := fed.all(it in here)
 		for i, task in group {
 			scan << Task{
 				...task
