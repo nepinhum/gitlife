@@ -124,8 +124,12 @@ struct Scanned {
 	commits []gitrepo.Commit
 	// dropped names commits that left the location's scope and delta says
 	// whether commits is everything the location holds or only what is new.
-	dropped    []string
-	delta      bool
+	dropped []string
+	delta   bool
+	// refs is the ref state read again once the walk was done. The walk is only
+	// allowed to say where the next one may start from when the refs it ended on
+	// are still the refs it was handed.
+	refs       gitrepo.Refs
 	elapsed_ms int
 	error      string
 }
@@ -452,6 +456,7 @@ fn read(p Pass, task Task) Scanned {
 		if delta := read_delta(p, task) {
 			return Scanned{
 				...delta
+				refs:       p.git.refs(task.dir) or { gitrepo.Refs{} }
 				elapsed_ms: int(time.ticks() - started)
 			}
 		}
@@ -464,6 +469,7 @@ fn read(p Pass, task Task) Scanned {
 	}
 	return Scanned{
 		commits:    commits
+		refs:       p.git.refs(task.dir) or { gitrepo.Refs{} }
 		elapsed_ms: int(time.ticks() - started)
 	}
 }
@@ -548,7 +554,9 @@ fn store(task Task, scan Scanned, mut d index.DB, mut report Report, mut broken 
 			return
 		}
 	}
-	d.set_location_state(task.location_key, task.refs.digest, task.refs.tips) or {}
+	if scan.refs.digest == task.refs.digest {
+		d.set_location_state(task.location_key, task.refs.digest, task.refs.tips) or {}
+	}
 	report.add(Outcome{
 		source:      task.source_id
 		repository:  task.name
