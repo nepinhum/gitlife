@@ -408,8 +408,10 @@ fn enter(item Prepared, mut d index.DB, now i64) !Task {
 // answers with the tips to walk from or with nothing.
 //
 // Two conditions. The location must have been walked before or there is no
-// difference to take. And it must be the only walked location of its repository:
-// membership is the union of a repository's locations.
+// difference to take. And it must be the only location of its repository the
+// index has ever walked: membership is the union of a repository's locations.
+// Locations that join that union in this run are ruled out in plan which is the
+// first place the whole run is known.
 fn incremental(last index.LocationState, repository_id i64, mut d index.DB) []string {
 	if last.digest == '' || last.tips.len == 0 {
 		return []string{}
@@ -437,10 +439,16 @@ fn plan(tasks []Task) ([]Task, []Task) {
 			unchanged << group
 			continue
 		}
+		// A repository reached through more than one location this run is walked
+		// whole at every one of them. Its membership is the union of what they
+		// reach and a difference taken at one location would drop commits the
+		// others still hold.
+		alone := group.len == 1
 		for i, task in group {
 			scan << Task{
 				...task
-				fresh: i == 0
+				fresh:    i == 0
+				previous: if alone { task.previous } else { []string{} }
 			}
 		}
 	}
@@ -556,6 +564,8 @@ fn store(task Task, scan Scanned, mut d index.DB, mut report Report, mut broken 
 	}
 	if scan.refs.digest == task.refs.digest {
 		d.set_location_state(task.location_key, task.refs.digest, task.refs.tips) or {}
+	} else {
+		d.set_location_state(task.location_key, '', []string{}) or {}
 	}
 	report.add(Outcome{
 		source:      task.source_id
