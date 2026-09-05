@@ -232,8 +232,11 @@ pub fn (mut d DB) location_state(key string) !LocationState {
 	}
 }
 
+// set_location_state records what a walk left behind. It also marks the location
+// walked which an invalidating call is no less evidence of: the walk that could
+// not say where it stopped still put its commits in the index.
 pub fn (mut d DB) set_location_state(key string, digest string, tips []string) ! {
-	d.conn.exec_param_many('UPDATE repository_locations SET refs_digest = ?, ref_tips = ?
+	d.conn.exec_param_many('UPDATE repository_locations SET refs_digest = ?, ref_tips = ?, walked = 1
 		WHERE key = ?', [
 		digest,
 		tips.join(' '),
@@ -243,10 +246,12 @@ pub fn (mut d DB) set_location_state(key string, digest string, tips []string) !
 
 // scanned_locations counts the locations of a repository that have ever been
 // walked. Membership is the union of them, a location can only reason about
-// what a repository holds on its own when it is the only one.
+// what a repository holds on its own when it is the only one. What counts is
+// having walked, not holding a fingerprint: a location whose state was thrown
+// away still holds the commits it added.
 pub fn (mut d DB) scanned_locations(repository_id i64) !int {
-	return d.conn.q_int("SELECT count(*) FROM repository_locations
-		WHERE repository_id = ${repository_id} AND refs_digest != ''")!
+	return d.conn.q_int('SELECT count(*) FROM repository_locations
+		WHERE repository_id = ${repository_id} AND walked = 1')!
 }
 
 // replace_remotes records every remote a repository has, as evidence. These are

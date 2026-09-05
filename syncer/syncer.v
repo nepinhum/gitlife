@@ -114,7 +114,8 @@ struct Task {
 	// when the whole history has to be walked instead. See incremental.
 	previous []string
 	// fresh marks the first location of its repository to be written this run.
-	// Only that one clears the previous membership; the rest add to it.
+	// Only that one clears the previous membership; the rest add to it. No
+	// location is fresh in a run that doesn't reach all of them.
 	fresh bool
 }
 
@@ -213,7 +214,7 @@ pub fn run(c config.Config, mut d index.DB, o Options) !Report {
 	}
 
 	tasks := register(prepare_all(p, queue), mut d, mut report, mut broken, p.now)
-	scan, unchanged := plan(tasks)
+	scan, unchanged := plan(tasks, mut d)
 	for task in unchanged {
 		report.add(Outcome{
 			source:     task.source_id
@@ -432,7 +433,7 @@ fn incremental(last index.LocationState, refs gitrepo.Refs, repository_id i64, m
 // is not walked at all; if any one of them moved, every location of it is walked
 // because membership is replaced from their union and a partial union would lose
 // commits.
-fn plan(tasks []Task) ([]Task, []Task) {
+fn plan(tasks []Task, mut d index.DB) ([]Task, []Task) {
 	mut grouped := map[string][]Task{}
 	for task in tasks {
 		grouped[task.repository_id.str()] << task
@@ -449,10 +450,11 @@ fn plan(tasks []Task) ([]Task, []Task) {
 		// reach and a difference taken at one location would drop commits the
 		// others still hold.
 		alone := group.len == 1
+		whole := d.scanned_locations(group[0].repository_id) or { group.len } <= group.len
 		for i, task in group {
 			scan << Task{
 				...task
-				fresh:    i == 0
+				fresh:    whole && i == 0
 				previous: if alone { task.previous } else { []string{} }
 			}
 		}

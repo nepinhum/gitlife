@@ -36,7 +36,9 @@ wrote.
 Registration is separate from preparation because a repository can be reachable
 through more than one location. A working tree and a cached clone of the same
 origin are one repository and its membership is the union of them, not whichever
-was scanned last.
+was scanned last. That union is only rebuilt from scratch by a run that reaches
+every location feeding it; a sync of one source adds to it instead because the
+locations it never visited still hold what they reach.
 
 Work is handed out round robin and taken back in that same order, making the
 output of `--jobs 8` byte identical to the output of `--jobs 1`.

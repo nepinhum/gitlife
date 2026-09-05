@@ -2,7 +2,7 @@ module index
 
 // schema_version is bumped whenever a migration is appended. A database written
 // by a newer gitlife is refused rather than guessed at.
-const schema_version = 4
+const schema_version = 5
 
 // migrations[v - 1] holds the statements that take the schema to version v.
 // Statements are listed one per entry because SQLite prepares a single statement
@@ -12,6 +12,7 @@ const migrations = [
 	v2,
 	v3,
 	v4,
+	v5,
 ]
 
 const v1 = [
@@ -123,4 +124,13 @@ const v3 = []string{}
 // empty, costing each location one full walk and nothing after that.
 const v4 = [
 	"ALTER TABLE repository_locations ADD COLUMN ref_tips TEXT NOT NULL DEFAULT ''",
+]
+
+// v5 separates having been walked from holding a usable fingerprint. A location
+// that was walked and later invalidated still holds the membership it added and
+// a repository counting how many of its locations feed that membership has to
+// count it. Existing rows carry their digest over as the answer.
+const v5 = [
+	'ALTER TABLE repository_locations ADD COLUMN walked INTEGER NOT NULL DEFAULT 0',
+	"UPDATE repository_locations SET walked = 1 WHERE refs_digest != ''",
 ]
