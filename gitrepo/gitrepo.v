@@ -13,8 +13,11 @@ const commit_fields = 11
 
 // ref_scope is what a scan considers reachable. Every walk uses the same
 // scope or an incremental one would disagree with the full one about what a
-// repository holds.
-const ref_scope = ['--exclude=refs/stash', '--exclude=refs/notes/*', '--all']
+// repository holds. Replacements are left out with the rest of what is not
+// history: a graft rewrites the graph git reports and a difference taken across
+// a graft being added or dropped would be a difference between two graphs.
+const ref_scope = ['--exclude=refs/stash', '--exclude=refs/notes/*', '--exclude=refs/replace/*',
+	'--all']
 
 pub struct Commit {
 pub:
@@ -122,6 +125,7 @@ pub fn (g Git) refs(dir string) !Refs {
 // in_scope mirrors ref_scope which git applies and we can't ask it about.
 fn in_scope(name string) bool {
 	return name != 'refs/stash' && !name.starts_with('refs/notes/')
+		&& !name.starts_with('refs/replace/')
 }
 
 // add_tip keeps one entry per object. Ten branches on one commit are one tip.
