@@ -2,7 +2,7 @@ module index
 
 // schema_version is bumped whenever a migration is appended. A database written
 // by a newer gitlife is refused rather than guessed at.
-const schema_version = 3
+const schema_version = 6
 
 // migrations[v - 1] holds the statements that take the schema to version v.
 // Statements are listed one per entry because SQLite prepares a single statement
@@ -11,6 +11,9 @@ const migrations = [
 	v1,
 	v2,
 	v3,
+	v4,
+	v5,
+	v6,
 ]
 
 const v1 = [
@@ -115,3 +118,35 @@ const v2 = [
 // can belong to two repository rows that have to be merged first. That work is
 // fold_transport_keys in index.v.
 const v3 = []string{}
+
+// v4 keeps the ref tips a location was last scanned at, next to the digest that
+// says whether they moved. A scan that knows where the last one stopped can ask
+// git for the difference instead of the whole history. Existing rows start
+// empty, costing each location one full walk and nothing after that.
+const v4 = [
+	"ALTER TABLE repository_locations ADD COLUMN ref_tips TEXT NOT NULL DEFAULT ''",
+]
+
+// v5 separates having been walked from holding a usable fingerprint. A location
+// that was walked and later invalidated still holds the membership it added and
+// a repository counting how many of its locations feed that membership has to
+// count it. Existing rows carry their digest over as the answer.
+const v5 = [
+	'ALTER TABLE repository_locations ADD COLUMN walked INTEGER NOT NULL DEFAULT 0',
+	"UPDATE repository_locations SET walked = 1 WHERE refs_digest != ''",
+
+	"UPDATE repository_locations SET walked = 1 WHERE kind IN ('worktree', 'bare')",
+	"UPDATE repository_locations SET walked = 1
+		WHERE kind = 'remote' AND repository_id IN (
+			SELECT dc.repository_id FROM discoveries dc JOIN sources s ON s.id = dc.source_id
+			WHERE s.kind IN ('git', 'github'))",
+]
+
+// v6 drops every fingerprint taken while git was still rewriting ancestry from
+// replacements and grafts. Those locations were fingerprinted for a different
+// question and hold whatever the rewritten graph reported. One full walk each
+// puts the history that is really there in its place. What they contributed
+// stands until then which is the safe direction to be wrong in.
+const v6 = [
+	"UPDATE repository_locations SET refs_digest = '', ref_tips = ''",
+]

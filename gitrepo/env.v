@@ -22,9 +22,15 @@ const scrubbed = ['GIT_TRACE', 'GIT_TRACE_CURL', 'GIT_TRACE_PACKET', 'GIT_TRACE_
 // Their credential.helper is neutralized per invocation instead.
 pub fn git_env(extra map[string]string) map[string]string {
 	mut add := {
-		'GIT_TRACE_REDACT':    '1'
+		'GIT_TRACE_REDACT':       '1'
 		// An unattended sync must never block on a prompt.
-		'GIT_TERMINAL_PROMPT': '0'
+		'GIT_TERMINAL_PROMPT':    '0'
+		// git rewrites ancestry from replacements and from the graft file before
+		// it reports any of it. What is indexed is the history that is actually
+		// there which is also the only one two walks taken at different times
+		// can agree on.
+		'GIT_NO_REPLACE_OBJECTS': '1'
+		'GIT_GRAFT_FILE':         '/dev/null'
 	}
 	for name, value in extra {
 		add[name] = value

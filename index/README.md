@@ -26,3 +26,9 @@ two reports from disagreeing about what belongs to the user.
 `purge` forgets what no configured source can still reach. It is deliberately a
 separate act from removing a source. `--dry-run` is the same code path with the
 transaction rolled back instead of committed.
+
+`write_delta` is the other way in: the commits a location gained and the ones it
+lost for a repository whose membership can only have come from that one
+location. A repository reached through several locations holds the union of them
+and one location losing sight of a commit says nothing about the others, so those
+are written as whole snapshots.

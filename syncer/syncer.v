@@ -93,7 +93,7 @@ struct Prepared {
 	action        string
 	remotes       map[string]string
 	object_format string
-	digest        string
+	refs          gitrepo.Refs
 	elapsed_ms    int
 	error         string
 }
@@ -106,19 +106,35 @@ struct Task {
 	location_key  string
 	dir           string
 	object_format string
-	digest        string
+	refs          gitrepo.Refs
 	action        string
 	elapsed_ms    int // what preparing it already cost
 	changed       bool
+	// previous holds the tips this location was last walked at and is empty
+	// when the whole history has to be walked instead. See incremental.
+	previous []string
 	// fresh marks the first location of its repository to be written this run.
-	// Only that one clears the previous membership; the rest add to it.
+	// Only that one clears the previous membership; the rest add to it. No
+	// location is fresh in a run that doesn't reach all of them.
 	fresh bool
+	// whole says the run holds every location that fed this repository's
+	// membership. A run that doesn't can only add to that membership, so it still
+	// owes it a removal and records no state for what it walked.
+	whole bool
 }
 
 // Scanned is a worker's walk of one task's commits. It lives from the moment its
 // worker hands it over until the writer is done with it and no longer.
 struct Scanned {
-	commits    []gitrepo.Commit
+	commits []gitrepo.Commit
+	// dropped names commits that left the location's scope and delta says
+	// whether commits is everything the location holds or only what is new.
+	dropped []string
+	delta   bool
+	// refs is the ref state read again once the walk was done. The walk is only
+	// allowed to say where the next one may start from when the refs it ended on
+	// are still the refs it was handed.
+	refs       gitrepo.Refs
 	elapsed_ms int
 	error      string
 }
@@ -202,7 +218,7 @@ pub fn run(c config.Config, mut d index.DB, o Options) !Report {
 	}
 
 	tasks := register(prepare_all(p, queue), mut d, mut report, mut broken, p.now)
-	scan, unchanged := plan(tasks)
+	scan, unchanged := plan(tasks, mut d)
 	for task in unchanged {
 		report.add(Outcome{
 			source:     task.source_id
@@ -321,7 +337,7 @@ fn gather(p Pass, job Job) !Prepared {
 		action:        action
 		remotes:       remotes
 		object_format: p.git.object_format(dir)!
-		digest:        p.git.refs_digest(dir)!
+		refs:          p.git.refs(dir)!
 	}
 }
 
@@ -377,6 +393,7 @@ fn enter(item Prepared, mut d index.DB, now i64) !Task {
 	}
 
 	scanned := locations[0].key
+	last := d.location_state(scanned)!
 	return Task{
 		source_id:     item.source_id
 		repository_id: repository_id
@@ -384,11 +401,35 @@ fn enter(item Prepared, mut d index.DB, now i64) !Task {
 		location_key:  scanned
 		dir:           item.dir
 		object_format: item.object_format
-		digest:        item.digest
+		refs:          item.refs
 		action:        item.action
 		elapsed_ms:    item.elapsed_ms
-		changed:       item.digest != d.location_digest(scanned)!
+		// A shallow repository is never called unchanged. A fetch can deepen it
+		// without moving a ref, leaving the digest saying nothing happened
+		// while the history it holds has grown.
+		changed:  item.refs.digest != last.digest || item.refs.shallow
+		previous: incremental(last, item.refs, repository_id, mut d)
 	}
+}
+
+// incremental decides whether this location can be walked as a difference and
+// answers with the tips to walk from or with nothing.
+//
+// Three conditions. The location must have been walked before or there is no
+// difference to take. It must be the only location of its repository the index
+// has ever walked: membership is the union of a repository's locations and
+// locations that join that union in this run are ruled out in plan which is the
+// first place the whole run is known. And the history must be whole: deepening a
+// shallow repository puts ancestors of the old tips in reach and a difference
+// taken from those tips calls exactly those ancestors uninteresting.
+fn incremental(last index.LocationState, refs gitrepo.Refs, repository_id i64, mut d index.DB) []string {
+	if last.digest == '' || last.tips.len == 0 || refs.shallow {
+		return []string{}
+	}
+	if d.scanned_locations(repository_id) or { 2 } != 1 {
+		return []string{}
+	}
+	return last.tips
 }
 
 // plan splits the registered tasks into the ones to walk and the ones to leave
@@ -396,7 +437,7 @@ fn enter(item Prepared, mut d index.DB, now i64) !Task {
 // is not walked at all; if any one of them moved, every location of it is walked
 // because membership is replaced from their union and a partial union would lose
 // commits.
-fn plan(tasks []Task) ([]Task, []Task) {
+fn plan(tasks []Task, mut d index.DB) ([]Task, []Task) {
 	mut grouped := map[string][]Task{}
 	for task in tasks {
 		grouped[task.repository_id.str()] << task
@@ -408,19 +449,48 @@ fn plan(tasks []Task) ([]Task, []Task) {
 			unchanged << group
 			continue
 		}
+		// A repository reached through more than one location this run is walked
+		// whole at every one of them. Its membership is the union of what they
+		// reach and a difference taken at one location would drop commits the
+		// others still hold.
+		mut here := map[string]bool{}
+		for task in group {
+			here[task.location_key] = true
+		}
+		alone := here.len == 1
+		// Membership is only replaced when the run holds every location that fed
+		// it, named rather than counted: two sources can offer the same location
+		// while a third is missing and the count would call that whole. An
+		// unanswered question counts as a location that is missing.
+		fed := d.walked_locations(group[0].repository_id) or { [''] }
+		whole := fed.all(it in here)
 		for i, task in group {
 			scan << Task{
 				...task
-				fresh: i == 0
+				fresh:    whole && i == 0
+				whole:    whole
+				previous: if alone { task.previous } else { []string{} }
 			}
 		}
 	}
 	return scan, unchanged
 }
 
-// read walks one location's commits and times the walk.
+// read walks one location and times the walk. A location the index has seen
+// before is walked as a difference: what came into scope since the last walk and
+// what left it. Everything else is walked whole.
 fn read(p Pass, task Task) Scanned {
 	started := time.ticks()
+	if task.previous.len > 0 {
+		if delta := read_delta(p, task) {
+			return Scanned{
+				...delta
+				refs:       p.git.refs(task.dir) or { gitrepo.Refs{} }
+				elapsed_ms: int(time.ticks() - started)
+			}
+		}
+		// The old tips are gone
+	}
 	commits := p.git.commits(task.dir) or {
 		return Scanned{
 			error: err.msg()
@@ -428,7 +498,17 @@ fn read(p Pass, task Task) Scanned {
 	}
 	return Scanned{
 		commits:    commits
+		refs:       p.git.refs(task.dir) or { gitrepo.Refs{} }
 		elapsed_ms: int(time.ticks() - started)
+	}
+}
+
+fn read_delta(p Pass, task Task) !Scanned {
+	dropped := p.git.dropped(task.dir, task.previous)!
+	return Scanned{
+		commits: p.git.added(task.dir, task.previous)!
+		dropped: dropped
+		delta:   true
 	}
 }
 
@@ -483,22 +563,42 @@ fn store(task Task, scan Scanned, mut d index.DB, mut report Report, mut broken 
 			scan.error, now)
 		return
 	}
-	fresh := d.write_snapshot(task.repository_id, gitrepo.Scan{
-		object_format: task.object_format
-		refs_digest:   task.digest
-		commits:       scan.commits
-	}, task.fresh) or {
+	d.mark_walked(task.location_key) or {
 		fail_repository(mut d, mut report, mut broken, task.source_id, task.name, task.location_key,
 			err.msg(), now)
 		return
 	}
-	d.set_location_digest(task.location_key, task.digest) or {}
+	mut fresh := 0
+	mut held := scan.commits.len
+	if scan.delta {
+		fresh, held = d.write_delta(task.repository_id, task.object_format, scan.commits,
+			scan.dropped) or {
+			fail_repository(mut d, mut report, mut broken, task.source_id, task.name,
+				task.location_key, err.msg(), now)
+			return
+		}
+	} else {
+		fresh = d.write_snapshot(task.repository_id, gitrepo.Scan{
+			object_format: task.object_format
+			refs_digest:   task.refs.digest
+			commits:       scan.commits
+		}, task.fresh) or {
+			fail_repository(mut d, mut report, mut broken, task.source_id, task.name,
+				task.location_key, err.msg(), now)
+			return
+		}
+	}
+	if task.whole && scan.refs.digest == task.refs.digest {
+		d.set_location_state(task.location_key, task.refs.digest, task.refs.tips) or {}
+	} else {
+		d.set_location_state(task.location_key, '', []string{}) or {}
+	}
 	report.add(Outcome{
 		source:      task.source_id
 		repository:  task.name
 		status:      'ok'
 		action:      task.action
-		commits:     scan.commits.len
+		commits:     held
 		new_commits: fresh
 		elapsed_ms:  task.elapsed_ms + scan.elapsed_ms
 	})
