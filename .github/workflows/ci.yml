@@ -2,9 +2,6 @@ name: CI
 
 on:
   push:
-    branches:
-      - master
-      - dev
   pull_request:
 
 permissions:
@@ -16,23 +13,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout V
         uses: actions/checkout@v7
+        with:
+          repository: vlang/v
+
+      - name: Checkout Gitlife
+        uses: actions/checkout@v7
+        with:
+          path: gitlife
+
+      - name: Build V
+        run: make
 
       - name: Install SQLite
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
 
-      - name: Setup V
-        uses: vlang/setup-v@v1.7
-        with:
-          stable: true
-
-      #- name: Format
-      #  run: v fmt -verify . # it's broken (mostly), so you can ignore if it fails
-      # because latest fmt is broken
-
       - name: Test
-        run: v -old-compiler test .
+        run: |
+          cd gitlife
+          ../v -old-compiler test .
 
       - name: Build
-        run: v -old-compiler -prod -o gitlife .
+        run: |
+          cd gitlife
+          ../v -old-compiler -prod -o gitlife .
