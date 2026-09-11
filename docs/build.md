@@ -8,7 +8,7 @@ Linux and macOS. Windows is not supported: gitlife starts processes and lays out
 its directories the POSIX way and no works has done to change that.
 
 Requires `git` on PATH and SQLite (Arch: `pacman -S sqlite`, Debian:
-`apt install libsqlite3-dev`). Add `-old-compiler` if your V miscompiles this.
+`apt install libsqlite3-dev`).
 
 Use the stable V release, 0.5.2. V master moves fast and `v fmt` there is
 frequently broken, badly enough to rewrite working code into something that no

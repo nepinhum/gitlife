@@ -39,14 +39,14 @@ jobs:
           test "${version}" = "${manifest}"
 
       - name: Test
-        run: v -old-compiler test .
+        run: v test .
 
       # The commit, not 'git describe': on a tagged commit describe answers with
       # the tag, and 'gitlife v0.1.0 (v0.1.0)' tells nobody anything.
       - name: Build
         run: |
           GITLIFE_COMMIT=$(git rev-parse --short HEAD) \
-            v -old-compiler -prod -o gitlife .
+            v -prod -o gitlife .
           ./gitlife version
 
       - name: Package

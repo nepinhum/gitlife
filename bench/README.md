@@ -9,7 +9,7 @@ the run and the measurement.
 ## Running it
 
 ```console
-v -old-compiler -prod -o gitlife .
+v -prod -o gitlife .
 bench/gen.sh ~/gl-bench 1000 10000
 bench/run.sh ~/gl-bench
 ```

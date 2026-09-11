@@ -37,14 +37,12 @@ LSP reads it; a comment above `module x` is invisible to both.
 
 ## Build
 
-Every V invocation passes `-old-compiler`. V3 is broken on linux-gnu.
-
 Build with the stable V release, 0.5.2. On V master `v fmt` is frequently broken
 and rewrites code that was fine, so never trust a master formatter's diff.
 
 ```sh
 v fmt -w .
-v -old-compiler -o gitlife .          # development
+v -o gitlife .          # development
 ```
 
 Release builds add `-prod`, which turns on `-O3` and `-flto` and compiles the
@@ -53,7 +51,7 @@ is clean without it can still fail with it.
 
 ```sh
 GITLIFE_COMMIT=$(git describe --always --dirty) \
-  v -old-compiler -prod -o gitlife .
+  v -prod -o gitlife .
 ```
 
 The commit is stamped in at build time, never read at runtime: gitlife runs
@@ -71,7 +69,7 @@ A module nothing imports yet is **not** reached by the binary build. Check it on
 its own or it is unverified:
 
 ```sh
-v -old-compiler -shared -check <module>/
+v -shared -check <module>/
 ```
 
 Requires `git` on PATH and SQLite. Linux and macOS: process spawning is

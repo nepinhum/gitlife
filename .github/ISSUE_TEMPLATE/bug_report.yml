@@ -58,7 +58,7 @@ body:
         master breaks often and `v fmt` there in particular.
       placeholder: |
         Arch Linux
-        v 0.5.2, built with -old-compiler -prod
+        v 0.5.2, built with -prod
         git 2.51.0
     validations:
       required: true

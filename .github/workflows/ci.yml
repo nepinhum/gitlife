@@ -32,9 +32,9 @@ jobs:
       - name: Test
         run: |
           cd gitlife
-          ../v -old-compiler test .
+          ../v test .
 
       - name: Build
         run: |
           cd gitlife
-          ../v -old-compiler -prod -o gitlife .
+          ../v -prod -o gitlife .
