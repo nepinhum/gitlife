@@ -18,7 +18,7 @@ jobs:
         with:
           repository: vlang/v
           # The stable 0.5.2 tag, for a while...
-          ref: 7647ce1
+          ref: 7647ce1c6fad63b5578bc07883139906de74b2f8
 
       - name: Checkout the V bootstrap C
         uses: actions/checkout@v7
