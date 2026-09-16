@@ -121,8 +121,25 @@ fn with(mine string, query string) string {
 }
 
 pub fn (mut d DB) identity_candidates() ![]Candidate {
-	rows :=
-		d.conn.exec('SELECT gi.name, gi.email,\n\t\t\t(SELECT COUNT(*) FROM commits c WHERE c.author_identity_id = gi.id),\n\t\t\t(SELECT COUNT(*) FROM commits c WHERE c.committer_identity_id = gi.id),\n\t\t\t(SELECT COUNT(DISTINCT rc.repository_id) FROM repository_commits rc\n\t\t\t JOIN commits c ON c.id = rc.commit_id\n\t\t\t WHERE c.author_identity_id = gi.id OR c.committer_identity_id = gi.id)\n\t\tFROM git_identities gi\n\t\tWHERE NOT ${accepted}\n\t\tORDER BY 3 DESC, 4 DESC, 2 ASC\n\t\tLIMIT 20')!
+	// The two counts a candidate is ranked by come from covering indexes, a lookup
+	// each. How many repositories a person appears in does not: it walks both
+	// roles and folds them into a distinct count which is why it is asked only
+	// of the twenty rows that survive the ranking rather than of every identity
+	// the index has ever seen.
+	rows := d.conn.exec('WITH ranked AS (
+			SELECT gi.id AS id, gi.name AS name, gi.email AS email,
+				(SELECT COUNT(*) FROM commits c WHERE c.author_identity_id = gi.id) AS authored,
+				(SELECT COUNT(*) FROM commits c WHERE c.committer_identity_id = gi.id) AS committed
+			FROM git_identities gi
+			WHERE NOT ${accepted}
+			ORDER BY authored DESC, committed DESC, email ASC
+			LIMIT 20)
+		SELECT name, email, authored, committed,
+			(SELECT COUNT(DISTINCT rc.repository_id) FROM repository_commits rc
+			 JOIN commits c ON c.id = rc.commit_id
+			 WHERE c.author_identity_id = ranked.id OR c.committer_identity_id = ranked.id)
+		FROM ranked
+		ORDER BY authored DESC, committed DESC, email ASC')!
 	return rows.map(Candidate{
 		name:         it.val(0)
 		email:        it.val(1)
