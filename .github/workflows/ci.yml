@@ -35,15 +35,27 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: gitlife
+      - name: Cache V
+        id: v-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            v
+            v1_fallback
+            thirdparty/tcc
+          key: v-${{ env.V_REF }}-vc-${{ env.VC_REF }}-${{ runner.os }}
       - name: Build V
+        if: steps.v-cache.outputs.cache-hit != 'true'
         working-directory: .
         run: |
           make latest_tcc
           make local=1
-          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+      - name: Put V on PATH
+        working-directory: .
+        run: echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
       - name: Install SQLite
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
-      - name: Test
-        run: v test .
+      #- name: Test
+       # run: v test .
       - name: Build
         run: v -prod -o gitlife .

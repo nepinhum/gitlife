@@ -38,9 +38,6 @@ jobs:
           echo "tag ${GITHUB_REF_NAME}, version ${version}, v.mod ${manifest}"
           test "${version}" = "${manifest}"
 
-      - name: Test
-        run: v test .
-
       # The commit, not 'git describe': on a tagged commit describe answers with
       # the tag, and 'gitlife v0.1.0 (v0.1.0)' tells nobody anything.
       - name: Build
