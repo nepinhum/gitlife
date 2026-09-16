@@ -13,37 +13,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout Gitlife
+        uses: actions/checkout@v7
+
       - name: Checkout V
         uses: actions/checkout@v7
         with:
           repository: vlang/v
           # The stable 0.5.2 tag, for a while...
           ref: 7647ce1c6fad63b5578bc07883139906de74b2f8
+          path: v
 
       - name: Checkout the V bootstrap C
         uses: actions/checkout@v7
         with:
           repository: vlang/vc
           ref: 7eb8c54a3843e5107d5af06d7a8c3e928f322475
-          path: vc
-
-      - name: Checkout Gitlife
-        uses: actions/checkout@v7
-        with:
-          path: gitlife
+          path: v/vc
 
       - name: Build V
-        run: make v
+        run: make -C v v
 
       - name: Install SQLite
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
 
       - name: Test
-        run: |
-          cd gitlife
-          ../v test .
+        run: ./v/v test .
 
       - name: Build
-        run: |
-          cd gitlife
-          ../v -prod -o gitlife .
+        run: ./v/v -prod -o gitlife .
