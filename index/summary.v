@@ -85,32 +85,56 @@ fn ids(v []i64) string {
 
 pub fn (mut d DB) summary(f Filter) !Summary {
 	role := f.which()
-	authored, authored_params := f.mine('author')
-	committed, committed_params := f.mine('committer')
+	other := if role == 'author' { 'committer' } else { 'author' }
 	sel, params := f.mine(role)
+	rest, rest_params := f.mine(other)
 	scope := f.repo_scope()
 
-	total := 'SELECT COUNT(DISTINCT id) FROM mine'
-	repos := 'SELECT COUNT(DISTINCT rc.repository_id) FROM repository_commits rc
-		WHERE rc.commit_id IN (SELECT id FROM mine)'
-	by_source := 'SELECT s.kind, COUNT(DISTINCT dc.repository_id)\n\t\tFROM discoveries dc JOIN sources s ON s.id = dc.source_id\n\t\tWHERE ${scope} GROUP BY s.kind ORDER BY s.kind'
-	years := 'SELECT substr(d, 1, 4), COUNT(DISTINCT id) FROM mine GROUP BY 1 ORDER BY 1'
-	top := 'SELECT r.display_name, COUNT(*) FROM repository_commits rc
+	// Six of the answers below are about one set of commits. The set is gathered
+	// once and then read from rather than selected again for every answer: the
+	// report used to walk the history seven times to describe it once. The role
+	// the report is not about keeps its own scan, which is one scan for one
+	// number.
+	d.conn.exec('DROP TABLE IF EXISTS selected')!
+	d.conn.exec('CREATE TEMP TABLE selected (
+		id INTEGER PRIMARY KEY,
+		d  TEXT NOT NULL,
+		t  INTEGER NOT NULL
+	)')!
+	// Only what the aggregates read is kept. The object id and the subject belong
+	// to two commits out of however many the set holds and those two are looked
+	// up when they are asked for.
+	d.conn.exec_param_many('INSERT INTO selected (id, d, t) SELECT id, d, t FROM (${sel})',
+		params)!
+	// The first and the last commit are the same order read from either end.
+	d.conn.exec('CREATE INDEX selected_time ON selected (t, id)')!
+
+	held := d.count('SELECT COUNT(*) FROM selected', [])!
+	counterpart := d.count(with(rest, 'SELECT COUNT(DISTINCT id) FROM mine'), rest_params)!
+
+	// How many repositories the work is spread over and which of them hold most
+	// of it are the same grouping, counted and then cut.
+	per_repository := d.counts('SELECT r.display_name, COUNT(*) FROM repository_commits rc
 		JOIN repositories r ON r.id = rc.repository_id
-		WHERE rc.commit_id IN (SELECT id FROM mine)
-		GROUP BY r.id ORDER BY 2 DESC, 1 ASC LIMIT 10'
-	edge := 'SELECT object_id, d, subject FROM mine ORDER BY t'
+		WHERE rc.commit_id IN (SELECT id FROM selected)
+		GROUP BY r.id ORDER BY 2 DESC, 1 ASC', [])!
+
+	by_source := 'SELECT s.kind, COUNT(DISTINCT dc.repository_id)\n\t\tFROM discoveries dc JOIN sources s ON s.id = dc.source_id\n\t\tWHERE ${scope} GROUP BY s.kind ORDER BY s.kind'
+	years := 'SELECT substr(d, 1, 4), COUNT(*) FROM selected GROUP BY 1 ORDER BY 1'
+	edge := 'SELECT c.object_id, s.d, c.subject FROM selected s
+		JOIN commits c ON c.id = s.id
+		ORDER BY s.t'
 
 	return Summary{
 		role:              role
-		authored_commits:  d.count(with(authored, total), authored_params)!
-		committed_commits: d.count(with(committed, total), committed_params)!
-		repositories:      d.count(with(sel, repos), params)!
+		authored_commits:  if role == 'author' { held } else { counterpart }
+		committed_commits: if role == 'committer' { held } else { counterpart }
+		repositories:      per_repository.len
 		repos_by_source:   d.counts(by_source, [])!
-		first:             d.commit_ref(with(sel, edge + ' ASC, object_id ASC LIMIT 1'), params)!
-		latest:            d.commit_ref(with(sel, edge + ' DESC, object_id ASC LIMIT 1'), params)!
-		by_year:           d.counts(with(sel, years), params)!
-		top_repositories:  d.counts(with(sel, top), params)!
+		first:             d.commit_ref(edge + ' ASC, c.object_id ASC LIMIT 1', [])!
+		latest:            d.commit_ref(edge + ' DESC, c.object_id ASC LIMIT 1', [])!
+		by_year:           d.counts(years, [])!
+		top_repositories:  if per_repository.len > 10 { per_repository[..10] } else { per_repository }
 		candidates:        d.identity_candidates()!
 		accepted:          d.count('SELECT COUNT(*) FROM accepted_identities', [])!
 	}
