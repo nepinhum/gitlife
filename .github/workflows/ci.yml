@@ -17,6 +17,15 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: vlang/v
+          # The stable 0.5.2 tag, for a while...
+          ref: 7647ce1
+
+      - name: Checkout the V bootstrap C
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/vc
+          ref: 7eb8c54a3843e5107d5af06d7a8c3e928f322475
+          path: vc
 
       - name: Checkout Gitlife
         uses: actions/checkout@v7
@@ -24,7 +33,7 @@ jobs:
           path: gitlife
 
       - name: Build V
-        run: make
+        run: make v
 
       - name: Install SQLite
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
