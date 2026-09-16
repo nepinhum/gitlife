@@ -7,38 +7,43 @@ on:
 permissions:
   contents: read
 
+env:
+  VFLAGS: -no-parallel
+  V_REF: 316db75a07afe50a17c5e273a18d10af8e8068d1
+  VC_REF: d31eceeb33b7356676c7fba0a80736d370923c34
+
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-
+    defaults:
+      run:
+        working-directory: gitlife
     steps:
-      - name: Checkout Gitlife
-        uses: actions/checkout@v7
-
       - name: Checkout V
         uses: actions/checkout@v7
         with:
           repository: vlang/v
-          # The stable 0.5.2 tag, for a while...
-          ref: 7647ce1c6fad63b5578bc07883139906de74b2f8
-          path: v
-
-      - name: Checkout the V bootstrap C
+          ref: ${{ env.V_REF }}
+      - name: Checkout VC
         uses: actions/checkout@v7
         with:
           repository: vlang/vc
-          ref: 7eb8c54a3843e5107d5af06d7a8c3e928f322475
-          path: v/vc
-
+          ref: ${{ env.VC_REF }}
+          path: vc
+      - name: Checkout Gitlife
+        uses: actions/checkout@v7
+        with:
+          path: gitlife
       - name: Build V
-        run: make -C v v
-
+        working-directory: .
+        run: |
+          make latest_tcc
+          make local=1
+          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
       - name: Install SQLite
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
-
       - name: Test
-        run: ./v/v test .
-
+        run: v test .
       - name: Build
-        run: ./v/v -prod -o gitlife .
+        run: v -prod -o gitlife .
