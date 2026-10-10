@@ -9,8 +9,6 @@ permissions:
 
 env:
   VFLAGS: -no-parallel
-  V_REF: 316db75a07afe50a17c5e273a18d10af8e8068d1
-  VC_REF: d31eceeb33b7356676c7fba0a80736d370923c34
 
 jobs:
   test:
@@ -19,43 +17,29 @@ jobs:
     defaults:
       run:
         working-directory: gitlife
+
     steps:
       - name: Checkout V
         uses: actions/checkout@v7
         with:
           repository: vlang/v
-          ref: ${{ env.V_REF }}
-      - name: Checkout VC
-        uses: actions/checkout@v7
-        with:
-          repository: vlang/vc
-          ref: ${{ env.VC_REF }}
-          path: vc
+
       - name: Checkout Gitlife
         uses: actions/checkout@v7
         with:
           path: gitlife
-      - name: Cache V
-        id: v-cache
-        uses: actions/cache@v6
-        with:
-          path: |
-            v
-            v1_fallback
-            thirdparty/tcc
-          key: v-${{ env.V_REF }}-vc-${{ env.VC_REF }}-${{ runner.os }}
+
       - name: Build V
-        if: steps.v-cache.outputs.cache-hit != 'true'
         working-directory: .
         run: |
-          make latest_tcc
-          make local=1
-      - name: Put V on PATH
-        working-directory: .
-        run: echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+          make
+          ./v symlink -githubci
+
       - name: Install SQLite
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
-      #- name: Test
-       # run: v test .
+
+      - name: Test
+        run: v test .
+
       - name: Build
         run: v -prod -o gitlife .
