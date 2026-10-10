@@ -8,11 +8,12 @@
 
 ```console
 v fmt -w .
+v -check .
 v test .
 v -prod -o gitlife .
 ```
 
-Build with the stable V release, 0.5.2. `v fmt` on V master is frequently broken
+`v fmt` on V master is frequently broken
 and will rewrite code it should have left alone, so format with a stable
 toolchain if you have one and say which V you used above if you do not.
 
@@ -20,6 +21,5 @@ toolchain if you have one and say which V you used above if you do not.
 
 - [ ] `v fmt -w .` ran before the build and the build is clean with `-prod`
 - [ ] Tests pass, and anything touching config, state or cache runs against a disposable `GITLIFE_*_DIR`
-- [ ] A module nothing imports yet was checked on its own with `v -shared -check <module>/`
 - [ ] A new module carries a `README.md`
 - [ ] No token reaches a stored remote URL, SQLite or git's stderr
